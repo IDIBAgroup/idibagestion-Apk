@@ -1,0 +1,24 @@
+# Fichier de variables et accès plateformes (local uniquement)
+variable.md
+variables.md
+
+# Environnement et secrets
+.env
+.env.local
+.env.*.local
+
+# Root node_modules si installé ici
+node_modules/
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
