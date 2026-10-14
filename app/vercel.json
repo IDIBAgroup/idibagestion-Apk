@@ -3,7 +3,7 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm install",
+  "installCommand": "npm ci --registry=https://registry.npmjs.org/ --replace-registry-host=always",
   "devCommand": "npm run dev",
   "routes": [
     {
