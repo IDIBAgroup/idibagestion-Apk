@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, Send, Clock, CheckCircle, AlertCircle, X, Plus } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { getAll, addAndNotify, updateAndNotify } from '@/lib/db';
 import type { PortalTicket, PortalTicketResponse } from '@/types';
 
@@ -52,14 +53,6 @@ export function PortalTicketsView({ portalUser, portalType }: { portalUser: any;
     setSelectedTicket({ ...selectedTicket, responses: [...selectedTicket.responses, resp] });
   };
 
-  const statusColors = {
-    open: 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]',
-    in_progress: 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]',
-    waiting: 'bg-[var(--accent-info)]/10 text-[var(--accent-info)]',
-    resolved: 'bg-[var(--accent-success)]/10 text-[var(--accent-success)]',
-    closed: 'bg-[var(--bg-elevated)] text-[var(--text-muted)]',
-  };
-
   const priorityIcons = {
     low: <Clock size={12} />,
     medium: <AlertCircle size={12} />,
@@ -91,9 +84,7 @@ export function PortalTicketsView({ portalUser, portalType }: { portalUser: any;
                     {priorityIcons[ticket.priority]}
                     <span className="text-sm font-medium text-[var(--text-primary)]">{ticket.subject}</span>
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${statusColors[ticket.status]}`}>
-                    {ticket.status === 'open' ? 'Ouvert' : ticket.status === 'in_progress' ? 'En cours' : ticket.status === 'waiting' ? 'En attente' : ticket.status === 'resolved' ? 'Résolu' : 'Fermé'}
-                  </span>
+                  <StatusBadge status={ticket.status} />
                 </div>
                 <p className="text-xs text-[var(--text-muted)] line-clamp-1">{ticket.description}</p>
                 <div className="flex items-center gap-3 mt-2">
@@ -148,9 +139,7 @@ export function PortalTicketsView({ portalUser, portalType }: { portalUser: any;
             <div className="flex items-center gap-2">
               <button onClick={() => setSelectedTicket(null)} className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)]"><X size={14} /></button>
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">{selectedTicket.subject}</h3>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full ${statusColors[selectedTicket.status]}`}>
-                {selectedTicket.status === 'open' ? 'Ouvert' : selectedTicket.status === 'in_progress' ? 'En cours' : selectedTicket.status === 'waiting' ? 'En attente' : selectedTicket.status === 'resolved' ? 'Résolu' : 'Fermé'}
-              </span>
+              <StatusBadge status={selectedTicket.status} />
             </div>
 
             <div className="glass-card-compact p-3">

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { trpc } from '@/providers/trpc';
 import {
@@ -56,13 +57,7 @@ export function AdminPartnersPage() {
   const formatXAF = (amount: number) => `${amount.toLocaleString('fr-FR')} FCFA`;
 
   const statusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      active: 'bg-[var(--accent-success)]/10 text-[var(--accent-success)]',
-      suspended: 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]',
-      pending: 'bg-[var(--accent-info)]/10 text-[var(--accent-info)]',
-      inactive: 'bg-[var(--text-muted)]/10 text-[var(--text-muted)]',
-    };
-    return <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${styles[status] || ''}`}>{status}</span>;
+    return <StatusBadge status={status} />;
   };
 
   const levelBadge = (level: string) => {

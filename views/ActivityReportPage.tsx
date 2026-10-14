@@ -8,6 +8,7 @@ import {
   ArrowRight, Check, XCircle, Sparkles,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { getAll, addAndNotify, updateAndNotify } from '@/lib/db';
 
@@ -185,14 +186,12 @@ export function ActivityReportPage() {
           const isCurrent = i === currentIdx && report.status !== 'rejected';
           return (
             <div key={step.key} className="flex items-center gap-1">
-              <div className={`flex items-center gap-1 px-2 py-1 rounded text-[9px] font-medium ${isActive ? (isCurrent ? 'bg-[var(--accent-primary)] text-white' : 'bg-[var(--accent-primary)]/20 text-[var(--accent-primary)]') : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}`}>
-                {step.icon} {step.label}
-              </div>
+              <StatusBadge status={step.key} label={step.label} variant={isCurrent ? 'success' : isActive ? 'info' : 'neutral'} />
               {i < flow.length - 1 && <ArrowRight size={10} className="text-[var(--text-muted)]" />}
             </div>
           );
         })}
-        {report.status === 'rejected' && <span className="text-[9px] bg-[var(--accent-danger)]/10 text-[var(--accent-danger)] px-2 py-1 rounded ml-2"><XCircle size={10} className="inline" /> Rejeté</span>}
+        {report.status === 'rejected' && <StatusBadge status="rejected" className="ml-2" />}
       </div>
     );
   };
@@ -349,9 +348,7 @@ export function ActivityReportPage() {
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${reportTypeLabels[r.type]?.bg || ''}`} style={{ color: reportTypeLabels[r.type]?.color }}>
                       {reportTypeLabels[r.type]?.icon} {reportTypeLabels[r.type]?.label}
                     </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ backgroundColor: statusLabels[r.status]?.color + '20', color: statusLabels[r.status]?.color }}>
-                      {statusLabels[r.status]?.label}
-                    </span>
+                    <StatusBadge status={r.status} label={statusLabels[r.status]?.label ?? r.status} />
                     <span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1"><Calendar size={10} /> {r.periodLabel}</span>
                   </div>
                   <button onClick={() => { setSelectedReport(r); setShowDetail(true); }} className="text-[10px] text-[var(--accent-secondary)] hover:underline flex items-center gap-1"><Eye size={10} /> Voir</button>
@@ -382,9 +379,7 @@ export function ActivityReportPage() {
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium`} style={{ backgroundColor: reportTypeLabels[selectedReport.type]?.color + '20', color: reportTypeLabels[selectedReport.type]?.color }}>
                         {reportTypeLabels[selectedReport.type]?.label}
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ backgroundColor: statusLabels[selectedReport.status]?.color + '20', color: statusLabels[selectedReport.status]?.color }}>
-                        {statusLabels[selectedReport.status]?.label}
-                      </span>
+                      <StatusBadge status={selectedReport.status} label={statusLabels[selectedReport.status]?.label ?? selectedReport.status} />
                     </div>
                     <h3 className="text-base font-semibold text-[var(--text-primary)]">{selectedReport.title}</h3>
                     <p className="text-[10px] text-[var(--text-muted)] flex items-center gap-1 mt-0.5"><Calendar size={10} /> {selectedReport.periodLabel} · <User size={10} /> {selectedReport.employeeName} · <Building2 size={10} /> {selectedReport.departmentName}</p>

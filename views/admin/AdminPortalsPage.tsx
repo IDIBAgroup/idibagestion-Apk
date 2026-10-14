@@ -9,6 +9,7 @@ import {
   Activity, Shield,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/uiStore';
 import {
@@ -408,9 +409,7 @@ function NewsManager() {
                     {item.priority === 'high' && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">Important</span>
                     )}
-                    {!item.isPublished && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">Brouillon</span>
-                    )}
+                    {!item.isPublished && <StatusBadge status="draft" />}
                   </div>
                   <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">{item.title}</h3>
                   <p className="text-xs text-[var(--text-muted)] line-clamp-1">{item.excerpt}</p>
@@ -719,12 +718,7 @@ function AccountsManager() {
                       )}>
                         {getPortalLabel(user.portalType)}
                       </span>
-                      <span className={cn(
-                        "text-[10px] px-1.5 py-0.5 rounded",
-                        user.status === 'active' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
-                      )}>
-                        {user.status === 'active' ? 'Actif' : 'Inactif'}
-                      </span>
+                      <StatusBadge status={user.status} />
                     </div>
                     <p className="text-xs text-[var(--text-muted)]">{user.companyName}</p>
                     <div className="flex flex-wrap items-center gap-3 mt-1 text-[11px] text-[var(--text-muted)]">

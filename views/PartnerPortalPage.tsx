@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { trpc } from '@/providers/trpc';
 import { useAuth } from '@/hooks/useAuth';
@@ -281,7 +282,7 @@ export function PartnerPortalPage() {
                           <td className="py-2">{new Date(commission.createdAt).toLocaleDateString('fr-FR')}</td>
                           <td>{commission.invoiceNumber || 'COM-' + commission.id}</td>
                           <td className="text-right font-medium">{formatXAF(Number(commission.amount))}</td>
-                          <td><span className="px-2 py-0.5 rounded-full bg-[var(--bg-card-hover)] text-[var(--text-secondary)] text-[10px]">{commission.status}</span></td>
+                          <td><StatusBadge status={commission.status} /></td>
                         </tr>
                       ))}
                       {(!commissions || commissions.length === 0) && <tr><td colSpan={4} className="py-4 text-center">Aucune commission pour le moment.</td></tr>}

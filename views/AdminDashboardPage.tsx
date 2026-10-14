@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import {
   Building2, Users, CreditCard, TrendingUp, ArrowUpRight, ArrowDownRight,
@@ -62,21 +63,7 @@ export function AdminDashboardPage() {
   const formatXAF = (amount: number) => `${amount.toLocaleString('fr-FR')} FCFA`;
 
   const statusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      completed: 'bg-[var(--accent-success)]/10 text-[var(--accent-success)]',
-      pending: 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]',
-      failed: 'bg-[var(--accent-danger)]/10 text-[var(--accent-danger)]',
-      refunded: 'bg-[var(--text-muted)]/10 text-[var(--text-muted)]',
-      active: 'bg-[var(--accent-success)]/10 text-[var(--accent-success)]',
-      trial: 'bg-[var(--accent-info)]/10 text-[var(--accent-info)]',
-      past_due: 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]',
-      cancelled: 'bg-[var(--text-muted)]/10 text-[var(--text-muted)]',
-    };
-    return (
-      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${styles[status] || ''}`}>
-        {status}
-      </span>
-    );
+    return <StatusBadge status={status} />;
   };
 
   return (

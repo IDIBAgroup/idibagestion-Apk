@@ -368,7 +368,7 @@ function CommercialDocumentsPage({ kind }: { kind: DocumentKind }) {
                   <td className="px-4 py-3 text-[var(--text-secondary)]">{new Date(`${doc.date}T00:00:00`).toLocaleDateString('fr-FR')}</td>
                   <td className="px-4 py-3 text-[var(--text-secondary)]">{((doc as SalesOrder).expectedDeliveryDate || note.deliveryDate) ? new Date(`${((doc as SalesOrder).expectedDeliveryDate || note.deliveryDate)}T00:00:00`).toLocaleDateString('fr-FR') : 'â€”'}</td>
                   <td className="px-4 py-3 text-right font-medium text-[var(--text-primary)]">{isOrder ? formatMoney((doc as SalesOrder).total) : `${doc.items.length} ${t('ligne(s)')}`}</td>
-                  <td className="px-4 py-3"><select aria-label={`${t('Statut')} ${doc.number}`} value={doc.status} onChange={(event) => updateStatus(doc, event.target.value)} className="max-w-[180px] rounded border-0 px-2 py-1 text-xs font-semibold" style={{ color: status.color, backgroundColor: `${status.color}20` }}>
+                  <td className="px-4 py-3"><select aria-label={`${t('Statut')} ${doc.number}`} value={doc.status} onChange={(event) => updateStatus(doc, event.target.value)} className="max-w-[180px] rounded border border-[var(--glass-border)] px-2 py-0.5 text-xs font-semibold" style={{ color: status.color, backgroundColor: `${status.color}20` }}>
                     {Object.entries(statuses).map(([value, entry]) => <option key={value} value={value}>{t(entry.label)}</option>)}
                   </select></td>
                   <td className="px-4 py-3"><div className="flex justify-end gap-1">

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { useUIStore } from '@/stores/uiStore';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useBrandingStore, AVAILABLE_FONTS, AVAILABLE_LANGUAGES } from '@/stores/brandingStore';
 import { useActiveCompany } from '@/hooks/useActiveCompany';
 import { useCompanySelectionStore } from '@/stores/companySelectionStore';
@@ -844,7 +845,7 @@ export function SettingsPage() {
                             <td className="p-3"><div className="flex items-center gap-2"><div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-primary-hover)] flex items-center justify-center text-white text-xs font-bold">{(u.displayName || '?').charAt(0)}</div><div><p className="text-[var(--text-primary)] font-medium">{u.displayName || '—'}</p><p className="text-[10px] text-[var(--text-muted)]">{u.email}</p></div></div></td>
                             <td className="p-3 text-[var(--text-secondary)]">{u.roleName || '—'}</td>
                             <td className="p-3 text-[var(--text-secondary)]">{u.departmentId ? (departments.find((d: any) => d.id === u.departmentId)?.name || '—') : '—'}</td>
-                            <td className="p-3"><span className={`text-[10px] px-1.5 py-0.5 rounded ${u.status === 'active' ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]'}`}>{u.status || 'actif'}</span></td>
+                            <td className="p-3"><StatusBadge status={u.status || 'active'} /></td>
                             <td className="p-3 text-[var(--text-muted)]">{u.createdAt ? new Date(u.createdAt).toLocaleDateString('fr-FR') : '—'}</td>
                             <td className="p-3"><div className="flex items-center justify-center gap-1"><button onClick={() => handleDeleteUser(u.uid)} className="p-1.5 rounded hover:bg-white/5 text-[var(--accent-danger)]"><Trash2 size={12} /></button></div></td>
                           </tr>

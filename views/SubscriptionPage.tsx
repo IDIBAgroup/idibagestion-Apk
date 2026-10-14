@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { trpc } from '@/providers/trpc';
 import { useActiveCompany } from '@/hooks/useActiveCompany';
@@ -289,9 +290,7 @@ export function SubscriptionPage() {
                     <div className="flex items-center gap-4 text-right">
                       <div>
                         <div className="text-xs font-bold text-white font-mono">{formatXAF(tx.amountXAF)}</div>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${tx.status === 'completed' && tx.isVerified ? 'bg-emerald-500/20 text-emerald-700' : 'bg-amber-500/15 text-amber-800'}`}>
-                          {tx.status === 'completed' && tx.isVerified ? 'Confirme' : tx.status === 'completed' ? 'A verifier' : tx.status}
-                        </span>
+                        <StatusBadge status={tx.status === 'completed' && tx.isVerified ? 'completed' : 'pending'} label={tx.status === 'completed' && tx.isVerified ? 'Confirme' : tx.status === 'completed' ? 'A verifier' : tx.status} />
                       </div>
                       <button
                         onClick={() => setSelectedReceiptTx(tx)}

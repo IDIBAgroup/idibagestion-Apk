@@ -437,7 +437,7 @@ export function SupportPage() {
                 <div className="flex flex-wrap gap-2 mb-4">
                   <span className="text-xs text-[var(--text-muted)] mr-1">Changer statut:</span>
                   {['new', 'open', 'in_progress', 'waiting', 'resolved'].map(s => (
-                    <button key={s} onClick={() => handleStatusChange(selectedTicket.id, s)} className={`text-[10px] px-2 py-1 rounded font-medium ${selectedTicket.status === s ? 'bg-[var(--accent-primary)] text-white' : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
+                    <button key={s} onClick={() => handleStatusChange(selectedTicket.id, s)} className={`rounded border px-2 py-0.5 text-xs font-semibold ${selectedTicket.status === s ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)] text-white' : 'border-[var(--glass-border)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
                       {s.replace('_', ' ')}
                     </button>
                   ))}

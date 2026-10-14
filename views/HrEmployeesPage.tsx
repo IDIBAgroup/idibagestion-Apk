@@ -168,7 +168,7 @@ export function HrEmployeesPage() {
                     <td className="px-4 py-3 text-xs text-[var(--text-secondary)]">{new Date(contract.startDate).toLocaleDateString('fr-FR')}</td>
                     <td className="px-4 py-3 text-xs text-[var(--text-secondary)]">{contract.endDate ? new Date(contract.endDate).toLocaleDateString('fr-FR') : '-'}</td>
                     <td className="px-4 py-3 text-xs text-right font-medium text-[var(--text-primary)]">{formatXAF(contract.salary)}</td>
-                    <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full ${contract.status === 'active' ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : 'bg-[var(--accent-danger)]/10 text-[var(--accent-danger)]'}`}>{contract.status === 'active' ? 'Actif' : 'Terminé'}</span></td>
+                    <td className="px-4 py-3"><StatusBadge status={contract.status} label={contract.status === 'active' ? 'Actif' : 'Terminé'} /></td>
                   </motion.tr>
                 ))}
               </tbody>

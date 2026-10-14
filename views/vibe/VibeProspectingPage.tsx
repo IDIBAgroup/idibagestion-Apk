@@ -9,6 +9,7 @@ import {
   Play, Pause, Copy, Check, ChevronRight, RefreshCw, Upload,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { getAll, addAndNotify, updateAndNotify } from '@/lib/db';
 
@@ -643,9 +644,7 @@ export function VibeProspectingPage() {
                           <p className="text-[10px] text-[var(--text-muted)]">{seq.steps.length} étapes · {seq.channel}</p>
                         </div>
                       </div>
-                      <span className={`text-[9px] px-2 py-0.5 rounded-full ${seq.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : seq.status === 'paused' ? 'bg-amber-500/10 text-amber-400' : seq.status === 'completed' ? 'bg-[var(--bg-elevated)] text-[var(--text-muted)]' : 'bg-blue-500/10 text-blue-400'}`}>
-                        {seq.status}
-                      </span>
+                      <StatusBadge status={seq.status} />
                     </div>
 
                     {/* Metrics */}

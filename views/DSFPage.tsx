@@ -7,6 +7,7 @@ import {
   ArrowRight, FileSpreadsheet, Printer
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { useBrandingStore } from '@/stores/brandingStore';
 import { getAll, addAndNotify } from '@/lib/db';
@@ -354,9 +355,7 @@ export function DSFPage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${dsf.status === 'submitted' ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]'}`}>
-                              {dsf.status === 'submitted' ? 'Soumise' : 'Brouillon'}
-                            </span>
+                            <StatusBadge status={dsf.status} label={dsf.status === 'submitted' ? 'Soumise' : 'Brouillon'} />
                             <button onClick={() => handleExportCSV(dsf)} className="p-1.5 rounded hover:bg-white/5 text-[var(--text-muted)]" title="Exporter CSV"><FileSpreadsheet size={12} /></button>
                           </div>
                         </div>
