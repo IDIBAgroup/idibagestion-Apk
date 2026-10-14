@@ -9,6 +9,7 @@ import { useBrandingStore } from '@/stores/brandingStore';
 import { useAuth } from '@/hooks/useAuth';
 import { useUIStore as useUIActions } from '@/stores/uiStore';
 import { useEffect } from 'react';
+import { MobileBottomNav } from './MobileBottomNav';
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { sidebarOpen } = useUIStore();
@@ -74,20 +75,21 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }, [user, logout, showToast]);
 
   return (
-    <div className="h-screen overflow-hidden bg-[var(--bg-primary)]">
+    <div className="h-[100dvh] min-w-0 overflow-hidden bg-[var(--bg-primary)]">
       <Sidebar />
       <ToastProvider />
       <SearchModal />
       <ChatBubbles />
+      <MobileBottomNav />
 
       <div
-        className={`flex h-screen flex-col ml-16 transition-[margin] duration-300 ${
-          sidebarOpen ? 'md:ml-[320px]' : ''
+        className={`ml-0 flex h-full min-w-0 flex-col transition-[margin] duration-300 md:ml-16 ${
+          sidebarOpen ? 'lg:ml-[320px]' : ''
         }`}
       >
         <Header />
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="p-6">{children}</div>
+          <div className="min-w-0 p-3 pb-[calc(5rem+env(safe-area-inset-bottom))] sm:p-5 sm:pb-24 md:p-6 md:pb-6">{children}</div>
         </main>
       </div>
     </div>

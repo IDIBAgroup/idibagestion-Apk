@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Bell, Wifi, WifiOff, RefreshCw, X, Check } from 'lucide-react';
+import { Search, Bell, Wifi, WifiOff, X, Check } from 'lucide-react';
 import { useUIStore } from '@/stores/uiStore';
 import { useOfflineStore } from '@/stores/offlineStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -15,7 +15,7 @@ import { navModules, isActivePath } from './nav';
 
 export function Header() {
   const { currentPageTitle, notifications, unreadCount, markNotificationRead, markAllNotificationsRead, setSearchOpen } = useUIStore();
-  const { isOnline, isSyncing, pendingQueue } = useOfflineStore();
+  const isOnline = useOfflineStore((state) => state.isOnline);
   const { user, logout, isLoading } = useAuth();
   const language = useBrandingStore((state) => state.language);
   const t = (text: string) => translate(text, language);
@@ -25,21 +25,32 @@ export function Header() {
   const activeModule = navModules.find((m) => m.items.some((i) => isActivePath(pathname, i.href)));
   const activeItem = activeModule?.items.find((i) => isActivePath(pathname, i.href));
 
+  useEffect(() => {
+    const openNotifications = () => setShowNotifications(true);
+    const openProfile = () => setShowProfile(true);
+    window.addEventListener('idibages:open-notifications', openNotifications);
+    window.addEventListener('idibages:open-profile', openProfile);
+    return () => {
+      window.removeEventListener('idibages:open-notifications', openNotifications);
+      window.removeEventListener('idibages:open-profile', openProfile);
+    };
+  }, []);
+
   return (
-    <header className="relative z-20 flex h-[76px] shrink-0 items-center border-b border-[var(--divider)] bg-[var(--bg-card)] px-3 sm:px-6">
+    <header className="relative z-20 flex h-16 shrink-0 items-center border-b border-[var(--divider)] bg-[var(--bg-card)] px-2.5 sm:h-[76px] sm:px-6">
       {/* Page title with accent bars */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-3">
-          <span className="h-[30px] w-[9px] shrink-0 rounded-sm bg-[var(--accent-primary)]" />
-          <h1 className="truncate text-2xl font-bold text-[var(--text-primary)]">{t(activeItem?.label ?? currentPageTitle)}</h1>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <span className="h-6 w-1.5 shrink-0 rounded-sm bg-[var(--accent-primary)] sm:h-[30px] sm:w-[9px]" />
+          <h1 className="truncate text-base font-bold text-[var(--text-primary)] sm:text-2xl">{t(activeItem?.label ?? currentPageTitle)}</h1>
         </div>
-        <div className="mt-0.5 flex items-center gap-3">
+        <div className="mt-0.5 hidden items-center gap-3 sm:flex">
           <span className="h-3.5 w-[9px] shrink-0 rounded-sm bg-[var(--glass-border-hover)]" />
           <p className="truncate text-sm text-[var(--text-muted)]">IDIBAGES{activeModule ? ` · ${activeModule.label}` : ''}</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
       <label className="sr-only" htmlFor="dashboard-language">Platform language</label>
       <select id="dashboard-language" aria-label="Platform language" value={language} onChange={(event) => applyPlatformLanguage(event.target.value as 'fr' | 'en' | 'es')} className="h-10 max-w-16 rounded border border-[var(--glass-border)] bg-[var(--bg-card)] px-2 text-xs text-[var(--text-primary)] sm:max-w-28">
         {AVAILABLE_LANGUAGES.map((item) => <option key={item.code} value={item.code}>{item.code.toUpperCase()}</option>)}
@@ -79,19 +90,6 @@ export function Header() {
         {!isOnline && (
           <span className="text-xs text-[var(--accent-danger)] hidden md:inline">Hors ligne</span>
         )}
-        {isSyncing && (
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-          >
-            <RefreshCw size={14} className="text-[var(--accent-warning)]" />
-          </motion.div>
-        )}
-        {pendingQueue.length > 0 && (
-          <span className="text-[10px] bg-[var(--accent-warning)]/20 text-[var(--accent-warning)] rounded-full px-1.5 py-0.5">
-            {pendingQueue.length}
-          </span>
-        )}
       </div>
 
       {/* Notifications */}
@@ -118,7 +116,7 @@ export function Header() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -10, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                className="absolute right-0 top-full mt-2 w-80 glass-card-compact z-50 overflow-hidden"
+                className="absolute right-0 top-full mt-2 w-[min(20rem,calc(100vw-1.5rem))] glass-card-compact z-50 overflow-hidden"
               >
                 <div className="flex items-center justify-between p-3 border-b border-[var(--divider)]">
                   <span className="text-sm font-semibold text-[var(--text-primary)]">Notifications</span>
@@ -170,6 +168,8 @@ export function Header() {
       <div className="relative">
         <button
           onClick={() => setShowProfile(!showProfile)}
+          aria-label={t('Profil')}
+          aria-expanded={showProfile}
           className="flex h-10 items-center gap-2.5 rounded border border-[var(--glass-border)] bg-[var(--bg-card)] pl-1 pr-3 transition-colors hover:border-[var(--glass-border-hover)] hover:bg-[var(--bg-card-hover)]"
         >
           <div className="flex h-8 w-8 items-center justify-center rounded bg-[var(--rail-bg)] text-xs font-semibold text-white">

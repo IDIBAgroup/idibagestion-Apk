@@ -42,6 +42,7 @@ export function Sidebar() {
   const { companyName, logo, language } = useBrandingStore();
   const t = (text: string) => translate(text, language);
   const [mobileOpenPath, setMobileOpenPath] = useState<string | null>(null);
+  const [mobileModuleId, setMobileModuleId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [, setSettingsRevision] = useState(0);
@@ -55,6 +56,7 @@ export function Sidebar() {
 
   const moduleForPath = modules.find((m) => m.items.some((i) => isActivePath(pathname, i.href)));
   const displayModule =
+    (mobileOpen && mobileModuleId ? modules.find((m) => m.id === mobileModuleId) : undefined) ??
     moduleForPath ?? modules.find((m) => m.id === panelConfig.defaultModuleId) ?? modules[0];
   const menuItems =
     searchOpen && search.trim()
@@ -65,8 +67,13 @@ export function Sidebar() {
 
   useEffect(() => {
     const refreshSettings = () => setSettingsRevision((revision) => revision + 1);
+    const openModules = () => {
+      setMobileModuleId(null);
+      setMobileOpenPath(window.location.pathname);
+    };
     window.addEventListener('idibages-settings-updated', refreshSettings);
     window.addEventListener('storage', refreshSettings);
+    window.addEventListener('idibages:open-modules', openModules);
     const escape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setHovered(null);
@@ -79,6 +86,7 @@ export function Sidebar() {
       document.removeEventListener('keydown', escape);
       window.removeEventListener('idibages-settings-updated', refreshSettings);
       window.removeEventListener('storage', refreshSettings);
+      window.removeEventListener('idibages:open-modules', openModules);
       if (hoverTimer.current) clearTimeout(hoverTimer.current);
     };
   }, []);
@@ -108,7 +116,7 @@ export function Sidebar() {
   return (
     <>
       {/* Icon rail */}
-      <aside className="app-nav-rail fixed inset-y-0 left-0 z-40 flex w-16 flex-col">
+      <aside className="app-nav-rail fixed inset-y-0 left-0 z-40 hidden w-16 flex-col md:flex">
         <button
           type="button"
           onClick={toggleMenu}
@@ -213,7 +221,7 @@ export function Sidebar() {
           type="button"
           aria-label="Fermer le menu"
           onClick={() => setMobileOpenPath(null)}
-          className="fixed inset-y-0 left-16 right-0 z-20 bg-black/30 md:hidden"
+          className="fixed inset-x-0 top-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-20 bg-black/30 md:hidden"
         />
       )}
 
@@ -221,7 +229,7 @@ export function Sidebar() {
       <aside
         id="panel-sidebar"
         aria-label="Navigation de la section"
-        className={`fixed inset-y-0 left-16 z-30 flex w-64 flex-col border-r border-[var(--divider)] bg-[var(--bg-sidebar)] transition-transform duration-300 ${
+        className={`fixed inset-x-0 top-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 flex w-[min(20rem,calc(100vw-1rem))] flex-col border-r border-[var(--divider)] bg-[var(--bg-sidebar)] transition-transform duration-300 md:inset-y-0 md:left-16 md:right-auto md:w-64 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         } ${sidebarOpen ? 'md:translate-x-0' : 'md:-translate-x-full'}`}
       >
@@ -244,6 +252,21 @@ export function Sidebar() {
           )}
         </Link>
 
+        {mobileOpen && (
+          <div className="border-b border-[var(--divider)] p-3 md:hidden">
+            {mobileModuleId ? (
+              <button type="button" onClick={() => setMobileModuleId(null)} className="min-h-10 text-sm font-semibold text-[var(--accent-primary)]">← {t('Tous les modules')}</button>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {modules.map((module) => {
+                  const Icon = module.icon;
+                  return <button key={module.id} type="button" onClick={() => { setMobileModuleId(module.id); setSearchOpen(false); setSearch(''); }} className="flex min-h-12 min-w-0 items-center gap-2 rounded border border-[var(--glass-border)] px-2 text-left text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-primary)]"><Icon size={17} className="shrink-0 text-[var(--accent-primary)]" /><span className="truncate">{t(module.label)}</span></button>;
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {searchOpen && (
           <div className="flex h-10 shrink-0 items-center gap-3 border-b border-[var(--divider)] bg-[var(--bg-primary)] px-3">
             <Search size={16} className="shrink-0 text-[var(--text-muted)]" />
@@ -260,7 +283,7 @@ export function Sidebar() {
           </div>
         )}
 
-        <div className="flex h-[60px] shrink-0 items-center gap-3 border-b border-[var(--divider)] px-4">
+        <div className={`${mobileOpen && !mobileModuleId ? 'hidden md:flex' : 'flex'} h-[60px] shrink-0 items-center gap-3 border-b border-[var(--divider)] px-4`}>
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]">
             <displayModule.icon size={20} />
           </span>
@@ -271,7 +294,7 @@ export function Sidebar() {
         </div>
 
         {/* Branch-style menu */}
-        <div className="flex-1 overflow-y-auto py-3">
+        <div className={`${mobileOpen && !mobileModuleId ? 'hidden md:block' : 'block'} flex-1 overflow-y-auto py-3`}>
           <p className="mb-1 px-4 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             {searchOpen && search.trim() ? 'Résultats' : displayModule.label}
           </p>

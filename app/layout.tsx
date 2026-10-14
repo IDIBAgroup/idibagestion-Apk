@@ -13,7 +13,21 @@ const expose = localFont({
 
 export const metadata: Metadata = {
   title: 'IDIBAGES - ERP',
-  icons: { icon: '/brand/options/04-monogram.png' },
+  applicationName: 'IDIBAGES',
+  description: 'Plateforme de gestion et de pilotage d’entreprise.',
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: [{ url: '/pwa/icon.svg', type: 'image/svg+xml' }],
+    apple: [{ url: '/logo-default.png', type: 'image/png' }],
+  },
+  appleWebApp: { capable: true, title: 'IDIBAGES', statusBarStyle: 'black-translucent' },
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#081C2D',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
