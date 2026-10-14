@@ -1,0 +1,21 @@
+{
+  "tool": "built-in image_gen",
+  "prompts": [
+    {
+      "name": "01-wordmark",
+      "prompt": "Use case: logo-brand. Design one premium original logo concept for IDIBAGES, an enterprise ERP platform for Central African businesses. Exact text: \"IDIBAGES\" spelled I D I B A G E S. Flat vector-like crisp graphic, sophisticated custom sans-serif typography, horizontal logo lockup centered with generous transparent negative space. Colors only charcoal #242424 and burnt orange #B94724; background truly transparent. Absolutely NO enclosing container, square, rounded-square, circle badge, border, tile, app icon background, mockup, shadows, gradients, extra slogans, or watermarks. Direction 1: pure typographic wordmark, no separate icon. Bold contemporary architectural lettering, one elegantly customized burnt-orange G with an open angular terminal suggests forward movement. Remaining letters charcoal. Beautiful consistent kerning."
+    },
+    {
+      "name": "02-ribbon",
+      "prompt": "Use case: logo-brand. Design one premium original logo concept for IDIBAGES, an enterprise ERP platform for Central African businesses. Exact text: \"IDIBAGES\" spelled I D I B A G E S. Flat vector-like crisp graphic, sophisticated custom sans-serif typography, horizontal logo lockup centered with generous transparent negative space. Colors only charcoal #242424 and burnt orange #B94724; background truly transparent. Absolutely NO enclosing container, square, rounded-square, circle badge, border, tile, app icon background, mockup, shadows, gradients, extra slogans, or watermarks. Direction 2: a free-standing open ribbon symbol to the left of the charcoal wordmark. Two simple interwoven burnt-orange strokes form a flowing angular link, representing connected workflows. Not letters, not a knot, not enclosed. Minimal confident silhouette."
+    },
+    {
+      "name": "03-growth",
+      "prompt": "Use case: logo-brand. Design one premium original logo concept for IDIBAGES, an enterprise ERP platform for Central African businesses. Exact text: \"IDIBAGES\" spelled I D I B A G E S. Flat vector-like crisp graphic, sophisticated custom sans-serif typography, horizontal logo lockup centered with generous transparent negative space. Colors only charcoal #242424 and burnt orange #B94724; background truly transparent. Absolutely NO enclosing container, square, rounded-square, circle badge, border, tile, app icon background, mockup, shadows, gradients, extra slogans, or watermarks. Direction 3: a free-standing sculptural geometric symbol to the left of charcoal wordmark. Three rising offset burnt-orange planes join into a clean abstract upward wing, suggesting growth and coordination. Avoid literal bar charts and arrows. Precise minimalist geometry."
+    },
+    {
+      "name": "04-monogram",
+      "prompt": "Use case: logo-brand. Design one premium original logo concept for IDIBAGES, an enterprise ERP platform for Central African businesses. Exact text: \"IDIBAGES\" spelled I D I B A G E S. Flat vector-like crisp graphic, sophisticated custom sans-serif typography, horizontal logo lockup centered with generous transparent negative space. Colors only charcoal #242424 and burnt orange #B94724; background truly transparent. Absolutely NO enclosing container, square, rounded-square, circle badge, border, tile, app icon background, mockup, shadows, gradients, extra slogans, or watermarks. Direction 4: a free-standing expressive burnt-orange lowercase-inspired id ligature to the left of charcoal uppercase wordmark. A single smooth continuous ribbon joins i and d, with an independent small dot. Open airy calligraphic geometry with premium contemporary character. No enclosing shape."
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "tool": "built-in image_gen",
+  "prompts": [
+    [
+      "compliance",
+      "Editorial photograph for an ERP landing page: a Black Central African female finance professional in a charcoal blazer reviewing accounting documents with a laptop at a warm ivory desk in a modern office, thoughtful confident expression, natural window light, medium shot showing person and workspace. Palette charcoal and warm ivory with a small burnt orange notebook accent. Authentic realistic skin, hands, paper without legible text, laptop screen not visible. Premium restrained documentary photography, horizontal landscape composition, no text, logos or watermarks."
+    ],
+    [
+      "collaboration",
+      "Editorial photograph for an ERP landing page: three Black Central African business colleagues, two men and one woman, collaborating around a laptop in a refined contemporary office in Douala, warm welcoming atmosphere, candid discussion and natural expressions, medium wide shot, daylight through large windows with softly blurred city buildings outside. Charcoal and ivory professional clothing, small burnt orange desk accessory. Realistic anatomy and skin, no legible screen content, no logos, no text or watermarks. Horizontal landscape composition, premium restrained documentary photography."
+    ]
+  ]
+}

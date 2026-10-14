@@ -1,0 +1,1 @@
+ALTER TABLE `document_signature_requests` ADD `lastStatusCheckedAt` timestamp;

@@ -1,0 +1,1 @@
+ALTER TABLE `business_documents` ADD `classification` enum('public','internal','confidential','restricted') DEFAULT 'internal' NOT NULL;

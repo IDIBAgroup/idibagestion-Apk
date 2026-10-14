@@ -1,0 +1,97 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1786722648515,
+      "tag": "0000_talented_roxanne_simpson",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1790333498950,
+      "tag": "0001_transaction_verification",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1790333499895,
+      "tag": "0002_company_memberships",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1790333500861,
+      "tag": "0003_partner_account_invitations",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1790333501907,
+      "tag": "0004_company_access_invitations",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1790338018522,
+      "tag": "0005_production_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1790340682264,
+      "tag": "0006_google_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1791878177000,
+      "tag": "0007_subscription_packs_and_pricing",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1791886300670,
+      "tag": "0008_outstanding_centennial",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1791886420061,
+      "tag": "0009_slippery_the_santerians",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1791907495605,
+      "tag": "0010_silly_ink",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1791908707638,
+      "tag": "0011_spicy_franklin_richards",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1791911925643,
+      "tag": "0012_daffy_jackpot",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+ALTER TABLE `document_signature_requests` ADD `documentSha256` varchar(64);
