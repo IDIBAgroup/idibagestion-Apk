@@ -7,7 +7,8 @@ import { registerExposePdfFont } from '@/lib/pdf-font';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { useUIStore } from '@/stores/uiStore';
 import { useBrandingStore } from '@/stores/brandingStore';
-import { getAll } from '@/lib/db';
+import { addAndNotify, getAll, updateAndNotify } from '@/lib/db';
+import type { AccountingEntry, Asset } from '@/types';
 
 const STEP_ICONS: Record<string, React.ReactNode> = {
   inventaire: <Archive size={16} />,
@@ -31,80 +32,34 @@ const STEP_LABELS: Record<string, string> = {
   liasse: 'Liasse fiscale',
 };
 
-// SYSCOHADA Balance data structure for export
-function getBalanceData() {
-  return [
-    { code: '101', label: 'Capital social', debit: 0, credit: 50000000, net: 50000000 },
-    { code: '121', label: 'Resultat d\'exercice', debit: 0, credit: 85200000, net: 85200000 },
-    { code: '161', label: 'Emprunts obligataires', debit: 0, credit: 120000000, net: 120000000 },
-    { code: '162', label: 'Emprunts et dettes aupres des etablissements de credit', debit: 0, credit: 85000000, net: 85000000 },
-    { code: '211', label: 'Frais de developpement', debit: 15000000, credit: 0, net: 15000000 },
-    { code: '212', label: 'Brevets, licences, logiciels', debit: 8500000, credit: 0, net: 8500000 },
-    { code: '244', label: 'Materiel de transport', debit: 42000000, credit: 0, net: 42000000 },
-    { code: '245', label: 'Materiel de bureau et informatique', debit: 38500000, credit: 0, net: 38500000 },
-    { code: '281', label: 'Amort. immobilisations incorporelles', debit: 0, credit: 4750000, net: 4750000 },
-    { code: '2815', label: 'Amort. materiel de bureau et info', debit: 0, credit: 9200000, net: 9200000 },
-    { code: '401', label: 'Fournisseurs', debit: 0, credit: 38500000, net: 38500000 },
-    { code: '411', label: 'Clients', debit: 142500000, credit: 0, net: 142500000 },
-    { code: '416', label: 'Clients douteux', debit: 2500000, credit: 0, net: 2500000 },
-    { code: '431', label: 'Organismes sociaux (CNPS)', debit: 0, credit: 6200000, net: 6200000 },
-    { code: '4451', label: 'TVA collectee', debit: 0, credit: 25200000, net: 25200000 },
-    { code: '4452', label: 'TVA deductible', debit: 7800000, credit: 0, net: 7800000 },
-    { code: '521', label: 'Banques locales', debit: 45200000, credit: 0, net: 45200000 },
-    { code: '601', label: 'Achats stockes - Matieres premieres', debit: 125000000, credit: 0, net: 125000000 },
-    { code: '607', label: 'Achats de marchandises', debit: 45000000, credit: 0, net: 45000000 },
-    { code: '621', label: 'Sous-traitance generale', debit: 35000000, credit: 0, net: 35000000 },
-    { code: '628', label: 'Fournitures de bureau', debit: 8500000, credit: 0, net: 8500000 },
-    { code: '631', label: 'Frais bancaires', debit: 3200000, credit: 0, net: 3200000 },
-    { code: '633', label: 'Frais de formation du personnel', debit: 7500000, credit: 0, net: 7500000 },
-    { code: '661', label: 'Salaires et appointements', debit: 156000000, credit: 0, net: 156000000 },
-    { code: '664', label: 'Charges sociales (CNPS)', debit: 28500000, credit: 0, net: 28500000 },
-    { code: '681', label: 'Dotations aux amortissements', debit: 13950000, credit: 0, net: 13950000 },
-    { code: '701', label: 'Ventes de marchandises', debit: 0, credit: 487000000, net: 487000000 },
-    { code: '706', label: 'Services vendus', debit: 0, credit: 125000000, net: 125000000 },
-    { code: '77', label: 'Revenus financiers', debit: 0, credit: 3500000, net: 3500000 },
-    { code: '80', label: 'Resultat d\'exercice', debit: 0, credit: 0, net: 0 },
-  ];
+function accountTotals(entries: AccountingEntry[]) {
+  const totals = new Map<string, { code: string; label: string; debit: number; credit: number }>();
+  entries.forEach((entry) => {
+    const current = totals.get(entry.accountCode) || { code: entry.accountCode, label: entry.accountLabel, debit: 0, credit: 0 };
+    current.debit += entry.debit;
+    current.credit += entry.credit;
+    totals.set(entry.accountCode, current);
+  });
+  return [...totals.values()].sort((a, b) => a.code.localeCompare(b.code, 'fr', { numeric: true }));
 }
 
-// Bilan data (Assets & Liabilities)
-function getBilanData() {
+function getBalanceData(entries: AccountingEntry[]) {
+  return accountTotals(entries).map((account) => ({ ...account, net: Math.abs(account.debit - account.credit) }));
+}
+
+function getBilanData(entries: AccountingEntry[]) {
+  const accounts = accountTotals(entries);
   return {
-    actif: [
-      { poste: 'Immobilisations incorporelles', brut: 23500000, amort: 4750000, net: 18750000 },
-      { poste: 'Immobilisations corporelles', brut: 80500000, amort: 9200000, net: 71300000 },
-      { poste: 'Clients et comptes rattaches', brut: 145000000, prov: 0, net: 145000000 },
-      { poste: 'Autres creances', brut: 53000000, prov: 0, net: 53000000 },
-      { poste: 'Tresorerie et equivalents', brut: 45200000, prov: 0, net: 45200000 },
-    ],
-    passif: [
-      { poste: 'Capital social', montant: 50000000 },
-      { poste: 'Resultats reportes', montant: 85200000 },
-      { poste: 'Autres reserves', montant: 0 },
-      { poste: 'Emprunts et dettes financieres', montant: 205000000 },
-      { poste: 'Fournisseurs et comptes rattaches', montant: 38500000 },
-      { poste: 'Dettes sociales et fiscales', montant: 31400000 },
-      { poste: 'Autres dettes', montant: 8250000 },
-    ]
+    actif: accounts.filter((account) => /^[2345]/.test(account.code) && account.debit > account.credit).map((account) => ({ poste: `${account.code} · ${account.label}`, brut: account.debit, amort: 0, prov: 0, net: account.debit - account.credit })),
+    passif: accounts.filter((account) => (/^1/.test(account.code) || /^[45]/.test(account.code)) && account.credit > account.debit).map((account) => ({ poste: `${account.code} · ${account.label}`, montant: account.credit - account.debit })),
   };
 }
 
-function getCompteResultat() {
+function getCompteResultat(entries: AccountingEntry[]) {
+  const accounts = accountTotals(entries);
   return {
-    charges: [
-      { poste: 'Achats de marchandises', montant: 170000000 },
-      { poste: 'Charges externes', montant: 46700000 },
-      { poste: 'Impots et taxes', montant: 8500000 },
-      { poste: 'Charges de personnel', montant: 184500000 },
-      { poste: 'Dotations aux amortissements', montant: 13950000 },
-      { poste: 'Autres charges', montant: 12500000 },
-    ],
-    produits: [
-      { poste: 'Ventes de marchandises', montant: 487000000 },
-      { poste: 'Prestations de services', montant: 125000000 },
-      { poste: 'Revenus financiers', montant: 3500000 },
-      { poste: 'Autres produits', montant: 2750000 },
-    ]
+    charges: accounts.filter((account) => /^6/.test(account.code) && account.debit > account.credit).map((account) => ({ poste: `${account.code} · ${account.label}`, montant: account.debit - account.credit })),
+    produits: accounts.filter((account) => /^7/.test(account.code) && account.credit > account.debit).map((account) => ({ poste: `${account.code} · ${account.label}`, montant: account.credit - account.debit })),
   };
 }
 
@@ -112,13 +67,16 @@ export function YearEndClosingPage() {
   const { setCurrentPageTitle, showToast } = useUIStore();
   const { companyName } = useBrandingStore();
   const [isRunning, setIsRunning] = useState(false);
+  const [fiscalYear, setFiscalYear] = useState(new Date().getFullYear() - 1);
+  const [, setRefresh] = useState(0);
 
   useEffect(() => { setCurrentPageTitle('Cloture d\'Exercice'); }, [setCurrentPageTitle]);
 
-  const closingEntries = getAll('closingEntries');
+  const closingEntries = getAll('closingEntries').filter((entry) => entry.fiscalYear === fiscalYear);
   const completedSteps = closingEntries.filter((s: any) => s.status === 'completed').length;
   const totalSteps = closingEntries.length;
-  const progress = (completedSteps / totalSteps) * 100;
+  const progress = totalSteps ? (completedSteps / totalSteps) * 100 : 0;
+  const periodEntries = () => (getAll('accountingEntries') as AccountingEntry[]).filter((entry) => entry.date.startsWith(String(fiscalYear)));
 
   const formatDate = (d: string) => d ? new Date(d).toLocaleDateString('fr-FR') : '-';
   const formatXAF = (a: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XAF', minimumFractionDigits: 0 }).format(a);
@@ -126,23 +84,54 @@ export function YearEndClosingPage() {
 
   const handleRunAutomation = () => {
     setIsRunning(true);
-    showToast('Automatisation lancee...', 'info');
-    setTimeout(() => {
-      showToast('Etapes automatisees executees avec succes', 'success');
-      setIsRunning(false);
-    }, 3000);
+    const allEntries = getAll('accountingEntries') as AccountingEntry[];
+    const assets = getAll('assets') as Asset[];
+    let generated = 0;
+    assets.filter((asset) => asset.status === 'active' && asset.usefulLifeYears && asset.acquisitionDate).forEach((asset) => {
+      const alreadyPosted = (asset.depreciationPostedYears || []).includes(fiscalYear) || allEntries.some((entry) => entry.pieceNumber === `AMORT-${fiscalYear}-${asset.id}`);
+      if (alreadyPosted) return;
+      const acquired = new Date(`${asset.depreciationStartDate || asset.acquisitionDate}T00:00:00`);
+      const yearStart = new Date(fiscalYear, 0, 1);
+      const yearEnd = new Date(fiscalYear, 11, 31);
+      if (acquired > yearEnd) return;
+      const monthsInYear = Math.max(0, 12 - Math.max(0, acquired.getFullYear() === fiscalYear ? acquired.getMonth() : 0));
+      const life = asset.usefulLifeYears || 0;
+      if (!life) return;
+      const annualRate = asset.depreciationMethod === 'degressive' ? Math.min(1, 2 / life) : 1 / life;
+      const fullYearsBefore = Math.max(0, fiscalYear - acquired.getFullYear());
+      const openingValue = asset.depreciationMethod === 'degressive' ? asset.value * Math.pow(1 - annualRate, fullYearsBefore) : asset.value;
+      const amount = Math.min(Math.max(0, asset.value - (asset.depreciation || 0)), openingValue * annualRate * monthsInYear / 12);
+      if (amount <= 0) return;
+      const pieceNumber = `AMORT-${fiscalYear}-${asset.id}`;
+      const label = `Dotation amortissement - ${asset.name}`;
+      const accountLabel = asset.category.toLocaleLowerCase().includes('incorp') ? 'Amortissements des immobilisations incorporelles' : 'Amortissements des immobilisations corporelles';
+      const expenseEntry: AccountingEntry = { id: `${pieceNumber}-D`, date: `${fiscalYear}-12-31`, journal: 'OD', pieceNumber, accountCode: '681', accountLabel: 'Dotations aux amortissements', label, debit: amount, credit: 0, companyId: asset.companyId };
+      const reserveEntry: AccountingEntry = { id: `${pieceNumber}-C`, date: `${fiscalYear}-12-31`, journal: 'OD', pieceNumber, accountCode: asset.category.toLocaleLowerCase().includes('incorp') ? '281' : '284', accountLabel, label, debit: 0, credit: amount, companyId: asset.companyId };
+      addAndNotify('accountingEntries', expenseEntry);
+      addAndNotify('accountingEntries', reserveEntry);
+      const cumulativeDepreciation = Math.min(asset.value, (asset.depreciation || 0) + amount);
+      updateAndNotify('assets', asset.id, { depreciation: cumulativeDepreciation, netValue: asset.value - cumulativeDepreciation, depreciationPostedYears: [...(asset.depreciationPostedYears || []), fiscalYear] });
+      generated += 1;
+    });
+    const existingStep = closingEntries.find((entry) => entry.step === 'depreciation');
+    const step = { id: existingStep?.id || `closing-depreciation-${fiscalYear}`, fiscalYear, step: 'depreciation', description: `${generated} dotation(s) d’amortissement générée(s)`, status: 'completed' as const, automated: true, entries: allEntries.filter((entry) => entry.pieceNumber.startsWith(`AMORT-${fiscalYear}-`)), startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), companyId: 'comp-1' };
+    if (existingStep) updateAndNotify('closingEntries', existingStep.id, step);
+    else addAndNotify('closingEntries', step);
+    setRefresh((value) => value + 1);
+    setIsRunning(false);
+    showToast(generated ? `${generated} dotation(s) calculée(s), enregistrée(s) et ajoutée(s) aux écritures.` : 'Aucune dotation à générer : vérifiez les immobilisations, leur durée et la période sélectionnée.', generated ? 'success' : 'info');
   };
 
   // Export PDF Balance
   const exportBalancePDF = async () => {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     await registerExposePdfFont(doc);
-    const data = getBalanceData();
+    const data = getBalanceData(periodEntries());
     const totalDebit = data.reduce((s, r) => s + r.debit, 0);
     const totalCredit = data.reduce((s, r) => s + r.credit, 0);
 
     doc.setFontSize(16);
-    doc.text(`BALANCE DES COMPTES - EXERCICE 2024`, 148, 15, { align: 'center' });
+    doc.text(`BALANCE DES COMPTES - EXERCICE ${fiscalYear}`, 148, 15, { align: 'center' });
     doc.setFontSize(10);
     doc.text(`${companyName} - Conformite SYSCOHADA`, 148, 22, { align: 'center' });
     doc.text(`Date d\'edition: ${new Date().toLocaleDateString('fr-FR')}`, 148, 27, { align: 'center' });
@@ -165,7 +154,7 @@ export function YearEndClosingPage() {
       columnStyles: { 0: { cellWidth: 15 }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
     });
 
-    doc.save(`Balance_2024_${companyName.replace(/\s/g, '_')}.pdf`);
+    doc.save(`Balance_${fiscalYear}_${companyName.replace(/\s/g, '_')}.pdf`);
     showToast('Balance exportee en PDF', 'success');
   };
 
@@ -173,12 +162,12 @@ export function YearEndClosingPage() {
   const exportBilanPDF = async () => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     await registerExposePdfFont(doc);
-    const { actif, passif } = getBilanData();
+    const { actif, passif } = getBilanData(periodEntries());
     const totalActif = actif.reduce((s, r) => s + r.net, 0);
     const totalPassif = passif.reduce((s, r) => s + r.montant, 0);
 
     doc.setFontSize(16);
-    doc.text(`BILAN AU 31/12/2024`, 105, 15, { align: 'center' });
+    doc.text(`BILAN AU 31/12/${fiscalYear}`, 105, 15, { align: 'center' });
     doc.setFontSize(10);
     doc.text(`${companyName} - Conformite SYSCOHADA`, 105, 22, { align: 'center' });
 
@@ -211,7 +200,7 @@ export function YearEndClosingPage() {
       columnStyles: { 1: { halign: 'right' } },
     });
 
-    doc.save(`Bilan_2024_${companyName.replace(/\s/g, '_')}.pdf`);
+    doc.save(`Bilan_${fiscalYear}_${companyName.replace(/\s/g, '_')}.pdf`);
     showToast('Bilan exporte en PDF', 'success');
   };
 
@@ -219,13 +208,13 @@ export function YearEndClosingPage() {
   const exportResultatPDF = async () => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     await registerExposePdfFont(doc);
-    const { charges, produits } = getCompteResultat();
+    const { charges, produits } = getCompteResultat(periodEntries());
     const totalCharges = charges.reduce((s, r) => s + r.montant, 0);
     const totalProduits = produits.reduce((s, r) => s + r.montant, 0);
     const resultat = totalProduits - totalCharges;
 
     doc.setFontSize(16);
-    doc.text(`COMPTE DE RESULTAT - EXERCICE 2024`, 105, 15, { align: 'center' });
+    doc.text(`COMPTE DE RESULTAT - EXERCICE ${fiscalYear}`, 105, 15, { align: 'center' });
     doc.setFontSize(10);
     doc.text(`${companyName} - Conformite SYSCOHADA`, 105, 22, { align: 'center' });
 
@@ -262,7 +251,7 @@ export function YearEndClosingPage() {
     doc.setTextColor(resultat >= 0 ? 45 : 239, resultat >= 0 ? 212 : 68, resultat >= 0 ? 168 : 68);
     doc.text(`RESULTAT NET : ${resultat >= 0 ? 'BENEFICE' : 'PERTE'} ${formatN(Math.abs(resultat))} XAF`, 14, finalY);
 
-    doc.save(`Compte_Resultat_2024_${companyName.replace(/\s/g, '_')}.pdf`);
+    doc.save(`Compte_Resultat_${fiscalYear}_${companyName.replace(/\s/g, '_')}.pdf`);
     showToast('Compte de resultat exporte en PDF', 'success');
   };
 
@@ -270,22 +259,22 @@ export function YearEndClosingPage() {
   const exportCSV = (type: 'balance' | 'bilan' | 'resultat') => {
     let csv = '';
     if (type === 'balance') {
-      const data = getBalanceData();
+      const data = getBalanceData(periodEntries());
       csv = 'Code,Libelle,Debit,Credit,Solde\n';
       data.forEach(r => { csv += `${r.code},"${r.label}",${r.debit},${r.credit},${r.net}\n`; });
       const td = data.reduce((s, r) => s + r.debit, 0);
       const tc = data.reduce((s, r) => s + r.credit, 0);
       csv += `,TOTAUX,${td},${tc},`;
     } else if (type === 'bilan') {
-      const { actif, passif } = getBilanData();
-      csv = 'BILAN AU 31/12/2024\n\nACTIF\nPoste,Brut,Amort/Prov,Net\n';
+      const { actif, passif } = getBilanData(periodEntries());
+      csv = `BILAN AU 31/12/${fiscalYear}\n\nACTIF\nPoste,Brut,Amort/Prov,Net\n`;
       actif.forEach(r => { csv += `"${r.poste}",${r.brut},${r.amort || r.prov},${r.net}\n`; });
       csv += `TOTAL ACTIF,${actif.reduce((s, r) => s + r.net, 0)}\n\nPASSIF\nPoste,Montant\n`;
       passif.forEach(r => { csv += `"${r.poste}",${r.montant}\n`; });
       csv += `TOTAL PASSIF,${passif.reduce((s, r) => s + r.montant, 0)}`;
     } else {
-      const { charges, produits } = getCompteResultat();
-      csv = 'COMPTE DE RESULTAT - EXERCICE 2024\n\nCHARGES\nPoste,Montant\n';
+      const { charges, produits } = getCompteResultat(periodEntries());
+      csv = `COMPTE DE RESULTAT - EXERCICE ${fiscalYear}\n\nCHARGES\nPoste,Montant\n`;
       charges.forEach(r => { csv += `"${r.poste}",${r.montant}\n`; });
       csv += `TOTAL CHARGES,${charges.reduce((s, r) => s + r.montant, 0)}\n\nPRODUITS\nPoste,Montant\n`;
       produits.forEach(r => { csv += `"${r.poste}",${r.montant}\n`; });
@@ -297,7 +286,7 @@ export function YearEndClosingPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${type}_2024_${companyName.replace(/\s/g, '_')}.csv`;
+    link.download = `${type}_${fiscalYear}_${companyName.replace(/\s/g, '_')}.csv`;
     link.click();
     URL.revokeObjectURL(url);
     showToast(`Export CSV ${type} telecharge`, 'success');
@@ -307,7 +296,8 @@ export function YearEndClosingPage() {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="text-lg font-semibold text-[var(--text-primary)]">Travaux de Fin d\'Exercice 2024</h2><p className="text-xs text-[var(--text-muted)]">Conformite SYSCOHADA — Sequence obligatoire</p></div>
+        <div><h2 className="text-lg font-semibold text-[var(--text-primary)]">Travaux de Fin d\'Exercice {fiscalYear}</h2><p className="text-xs text-[var(--text-muted)]">Conformité SYSCOHADA — séquence de clôture</p></div>
+        <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">Exercice <input type="number" min="2000" max="2100" value={fiscalYear} onChange={(event) => setFiscalYear(Number(event.target.value))} className="glass-input h-9 w-24 px-2" /></label>
         <button onClick={handleRunAutomation} disabled={isRunning} className="btn-primary h-9 disabled:opacity-50">
           {isRunning ? <Clock size={16} className="animate-spin" /> : <Play size={16} />}
           {isRunning ? ' Execution...' : ' Lancer automatisation'}
@@ -338,7 +328,7 @@ export function YearEndClosingPage() {
             {/* Balance */}
             <div className="glass-card-compact p-3 flex flex-col gap-2">
               <div className="flex items-center gap-2"><BookOpen size={14} className="text-[var(--accent-secondary)]" /><span className="text-sm font-medium text-[var(--text-primary)]">Balance des comptes</span></div>
-              <p className="text-[10px] text-[var(--text-muted)]">Balance au 31/12/2024 — 30 comptes</p>
+              <p className="text-[10px] text-[var(--text-muted)]">Balance au 31/12/{fiscalYear} — {periodEntries().length} lignes comptables</p>
               <div className="flex gap-2 mt-auto">
                 <button onClick={exportBalancePDF} className="flex-1 btn-secondary h-8 text-[10px] justify-center"><Download size={10} /> PDF</button>
                 <button onClick={() => exportCSV('balance')} className="flex-1 btn-secondary h-8 text-[10px] justify-center"><FileSpreadsheet size={10} /> CSV</button>
@@ -347,7 +337,7 @@ export function YearEndClosingPage() {
             {/* Bilan */}
             <div className="glass-card-compact p-3 flex flex-col gap-2">
               <div className="flex items-center gap-2"><Archive size={14} className="text-[var(--accent-purple)]" /><span className="text-sm font-medium text-[var(--text-primary)]">Bilan</span></div>
-              <p className="text-[10px] text-[var(--text-muted)]">Actif / Passif au 31/12/2024</p>
+              <p className="text-[10px] text-[var(--text-muted)]">Actif / Passif au 31/12/{fiscalYear}</p>
               <div className="flex gap-2 mt-auto">
                 <button onClick={exportBilanPDF} className="flex-1 btn-secondary h-8 text-[10px] justify-center"><Download size={10} /> PDF</button>
                 <button onClick={() => exportCSV('bilan')} className="flex-1 btn-secondary h-8 text-[10px] justify-center"><FileSpreadsheet size={10} /> CSV</button>
@@ -356,7 +346,7 @@ export function YearEndClosingPage() {
             {/* Compte de resultat */}
             <div className="glass-card-compact p-3 flex flex-col gap-2">
               <div className="flex items-center gap-2"><FileText size={14} className="text-[var(--accent-primary)]" /><span className="text-sm font-medium text-[var(--text-primary)]">Compte de resultat</span></div>
-              <p className="text-[10px] text-[var(--text-muted)]">Charges / Produits exercice 2024</p>
+              <p className="text-[10px] text-[var(--text-muted)]">Charges / Produits exercice {fiscalYear}</p>
               <div className="flex gap-2 mt-auto">
                 <button onClick={exportResultatPDF} className="flex-1 btn-secondary h-8 text-[10px] justify-center"><Download size={10} /> PDF</button>
                 <button onClick={() => exportCSV('resultat')} className="flex-1 btn-secondary h-8 text-[10px] justify-center"><FileSpreadsheet size={10} /> CSV</button>
@@ -397,7 +387,7 @@ export function YearEndClosingPage() {
 
               <div className="shrink-0">
                 {isPending && !isAutomated && (
-                  <button onClick={() => showToast(`Etape "${STEP_LABELS[step.step]}" marquee comme completee`, 'success')} className="btn-secondary h-8 text-xs">Valider</button>
+                  <button onClick={() => { updateAndNotify('closingEntries', step.id, { status: 'completed', completedAt: new Date().toISOString() }); setRefresh((value) => value + 1); showToast(`Étape « ${STEP_LABELS[step.step] || step.step} » validée.`, 'success'); }} className="btn-secondary h-8 text-xs">Valider</button>
                 )}
                 {isPending && isAutomated && (
                   <span className="text-xs text-[var(--text-muted)] flex items-center gap-1"><Settings size={12} /> En attente</span>
@@ -412,7 +402,7 @@ export function YearEndClosingPage() {
       {/* Summary */}
       <GlassCard>
         <div className="p-4">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Resume cloture exercice 2024</h3>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Résumé clôture exercice {fiscalYear}</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
             <div className="p-2 rounded-lg bg-[var(--bg-elevated)]"><p className="text-[10px] text-[var(--text-muted)]">Etapes completees</p><p className="text-lg font-bold text-[var(--accent-primary)]">{completedSteps}</p></div>
             <div className="p-2 rounded-lg bg-[var(--bg-elevated)]"><p className="text-[10px] text-[var(--text-muted)]">Etapes automatiques</p><p className="text-lg font-bold text-[var(--accent-secondary)]">{closingEntries.filter((s: any) => s.automated).length}</p></div>

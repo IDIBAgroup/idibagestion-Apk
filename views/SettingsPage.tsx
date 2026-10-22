@@ -14,13 +14,14 @@ import {
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { useUIStore } from '@/stores/uiStore';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useBrandingStore, AVAILABLE_FONTS, AVAILABLE_LANGUAGES } from '@/stores/brandingStore';
 import { useActiveCompany } from '@/hooks/useActiveCompany';
 import { useCompanySelectionStore } from '@/stores/companySelectionStore';
 import { getAll, addAndNotify, updateAndNotify, removeAndNotify } from '@/lib/db';
 import { trpc } from '@/providers/trpc';
 import { applyPlatformLanguage } from '@/lib/language';
+import { CompanyOperatingProfile } from '@/components/settings/CompanyOperatingProfile';
+import { getOhadaCountry } from '@/lib/ohada/countries';
 
 type SettingsTab = 'general' | 'products' | 'appearance' | 'integrations' | 'users' | 'roles' | 'departments' | 'modules' | 'messaging' | 'notifications' | 'security' | 'system';
 
@@ -49,7 +50,7 @@ const defaultSettings = {
     city: 'Douala', country: 'Cameroun', phone: '+237 233 42 00 00',
     email: 'contact@idibagroup.cm', website: 'www.idibagroup.cm',
     rccm: 'RC/DLA/2019/M/0847', niu: 'M0123456789C',
-    taxRate: 19.25, currency: 'XAF', fiscalYearStart: '01-01',
+    taxRate: 0, currency: 'XAF', fiscalYearStart: '01-01',
     language: 'fr', timezone: 'Africa/Douala', dateFormat: 'DD/MM/YYYY',
   },
   appearance: { theme: 'dark' as const, primaryColor: '#1F7A63', secondaryColor: '#3B82F6', backgroundColor: '#FFFFFF', fontId: 'inter', denseMode: false, animations: true },
@@ -98,6 +99,9 @@ export function SettingsPage() {
   const { setCurrentPageTitle, showToast } = useUIStore();
   const branding = useBrandingStore();
   const { companies } = useActiveCompany();
+  const { companyId } = useActiveCompany();
+  const operatingProfile = trpc.company.profile.useQuery({ companyId: companyId ?? 0 }, { enabled: Boolean(companyId) });
+  const legalIdentifiers = getOhadaCountry(operatingProfile.data?.countryCode ?? '');
   const activeCompanyId = useCompanySelectionStore((state) => state.activeCompanyId);
   const setActiveCompanyId = useCompanySelectionStore((state) => state.setActiveCompanyId);
   const { data: authAccount, isLoading: authAccountLoading } = trpc.auth.me.useQuery();
@@ -143,7 +147,7 @@ export function SettingsPage() {
     category: 'Logiciel',
     description: '',
     unitPriceHT: 150000,
-    taxRate: 19.25,
+    taxRate: 0,
     unit: 'Forfait',
     stock: 100,
   });
@@ -247,7 +251,7 @@ export function SettingsPage() {
     setProductsList(getAll('products') as any[]);
     setShowProductForm(false);
     setEditingProduct(null);
-    setProductForm({ name: '', category: 'Logiciel', description: '', unitPriceHT: 150000, taxRate: 19.25, unit: 'Forfait', stock: 100 });
+    setProductForm({ name: '', category: 'Logiciel', description: '', unitPriceHT: 150000, taxRate: 0, unit: 'Forfait', stock: 100 });
   };
 
   const handleDeleteProduct = (id: number) => {
@@ -437,26 +441,23 @@ export function SettingsPage() {
                       <Si label="Raison Sociale / Nom" value={general.companyName} onChange={(e: any) => setGeneral({ ...general, companyName: e.target.value })} />
                       <Si label="Adresse du siège" value={general.address} onChange={(e: any) => setGeneral({ ...general, address: e.target.value })} />
                       <Si label="Ville" value={general.city} onChange={(e: any) => setGeneral({ ...general, city: e.target.value })} />
-                      <Si label="Pays" value={general.country} onChange={(e: any) => setGeneral({ ...general, country: e.target.value })} />
                       <Si label="Téléphone officiel" value={general.phone} onChange={(e: any) => setGeneral({ ...general, phone: e.target.value })} />
                       <Si label="Email de contact" value={general.email} onChange={(e: any) => setGeneral({ ...general, email: e.target.value })} />
                       <Si label="Site web" value={general.website} onChange={(e: any) => setGeneral({ ...general, website: e.target.value })} />
-                      <Si label="RCCM (Registre du Commerce)" value={general.rccm} onChange={(e: any) => setGeneral({ ...general, rccm: e.target.value })} />
-                      <Si label="NIU (Numéro Identifiant Unique)" value={general.niu} onChange={(e: any) => setGeneral({ ...general, niu: e.target.value })} />
+                      <Si label={`${legalIdentifiers?.commercialRegisterLabel ?? 'RCCM'} (Registre du commerce)`} value={general.rccm} onChange={(e: any) => setGeneral({ ...general, rccm: e.target.value })} />
+                      <Si label={`${legalIdentifiers?.taxIdLabel ?? 'NIU'} (Identifiant fiscal)`} value={general.niu} onChange={(e: any) => setGeneral({ ...general, niu: e.target.value })} />
                     </div>
                   </div></GlassCard>
+
+                  <CompanyOperatingProfile />
 
                   <GlassCard><div className="p-5">
                     <h3 className="text-base font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2"><Wallet size={16} className="text-[var(--accent-primary)]" /> Configuration Financière & Fiscale</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <Si label="Taux TVA (%)" type="number" value={general.taxRate} onChange={(e: any) => setGeneral({ ...general, taxRate: Number(e.target.value) })} />
-                      <Si label="Devise Principale" options={[{ v: 'XAF', l: 'XAF (FCFA Cameroun/CEMAC)' }, { v: 'EUR', l: 'EUR (€ Euro)' }, { v: 'USD', l: 'USD ($ Dollar)' }]} value={general.currency} onChange={(e: any) => setGeneral({ ...general, currency: e.target.value })} />
-                      <Si label="Début de l'exercice fiscal" value={general.fiscalYearStart} onChange={(e: any) => setGeneral({ ...general, fiscalYearStart: e.target.value })} />
                       <Si label="Langue générale" options={AVAILABLE_LANGUAGES.map(lang => ({ v: lang.code, l: `${lang.flag} ${lang.name}` }))} value={general.language} onChange={(e: any) => { setGeneral({ ...general, language: e.target.value }); applyPlatformLanguage(e.target.value); }} />
-                      <Si label="Fuseau horaire" value={general.timezone} onChange={(e: any) => setGeneral({ ...general, timezone: e.target.value })} />
                       <Si label="Format de date" options={[{ v: 'DD/MM/YYYY', l: 'JJ/MM/AAAA' }, { v: 'MM/DD/YYYY', l: 'MM/JJ/AAAA' }, { v: 'YYYY-MM-DD', l: 'AAAA-MM-JJ' }]} value={general.dateFormat} onChange={(e: any) => setGeneral({ ...general, dateFormat: e.target.value })} />
                     </div>
-                    <p className="text-[10px] text-[var(--text-muted)] mt-2">La devise et le taux de TVA configurent les nouveaux documents et le catalogue. La devise SYSCOHADA de reporting reste XAF.</p>
+                    <p className="text-[10px] text-[var(--text-muted)] mt-2">Les paramètres fiscaux sont définis par pays et par période dans le profil de l’entreprise. Les documents utilisent uniquement une règle active configurée.</p>
                   </div></GlassCard>
                 </div>
               )}
@@ -475,7 +476,7 @@ export function SettingsPage() {
                         className="w-full h-9 pl-9 pr-4 glass-input text-xs"
                       />
                     </div>
-                    <button onClick={() => { setEditingProduct(null); setProductForm({ name: '', category: 'Informatique', description: '', unitPriceHT: 150000, taxRate: 19.25, unit: 'Forfait', stock: 100 }); setShowProductForm(true); }} className="btn-primary h-9 gap-1.5 text-xs font-bold">
+                    <button onClick={() => { setEditingProduct(null); setProductForm({ name: '', category: 'Informatique', description: '', unitPriceHT: 150000, taxRate: 0, unit: 'Forfait', stock: 100 }); setShowProductForm(true); }} className="btn-primary h-9 gap-1.5 text-xs font-bold">
                       <Plus size={14} /> Ajouter un Article / Service
                     </button>
                   </div>
@@ -497,7 +498,7 @@ export function SettingsPage() {
                         <tbody>
                           {productsList.filter((p: any) => !searchProduct || p.name?.toLowerCase().includes(searchProduct.toLowerCase()) || p.category?.toLowerCase().includes(searchProduct.toLowerCase())).map((p: any) => {
                             const pu = p.unitPriceHT || 0;
-                            const tax = p.taxRate || 19.25;
+                            const tax = p.taxRate ?? 0;
                             const ttc = pu * (1 + tax / 100);
                             return (
                               <tr key={p.id} className="border-b border-[var(--divider)]/50 hover:bg-white/[0.02]">
@@ -532,7 +533,7 @@ export function SettingsPage() {
                                     <button
                                       onClick={() => {
                                         setEditingProduct(p);
-                                        setProductForm({ name: p.name, category: p.category || 'Services', description: p.description || '', unitPriceHT: p.unitPriceHT, taxRate: p.taxRate || 19.25, unit: p.unit || 'Forfait', stock: p.stock || 100 });
+                                        setProductForm({ name: p.name, category: p.category || 'Services', description: p.description || '', unitPriceHT: p.unitPriceHT, taxRate: p.taxRate ?? 0, unit: p.unit || 'Forfait', stock: p.stock || 100 });
                                         setShowProductForm(true);
                                       }}
                                       className="p-1.5 rounded hover:bg-white/10 text-[var(--accent-secondary)]"
@@ -845,7 +846,7 @@ export function SettingsPage() {
                             <td className="p-3"><div className="flex items-center gap-2"><div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-primary-hover)] flex items-center justify-center text-white text-xs font-bold">{(u.displayName || '?').charAt(0)}</div><div><p className="text-[var(--text-primary)] font-medium">{u.displayName || '—'}</p><p className="text-[10px] text-[var(--text-muted)]">{u.email}</p></div></div></td>
                             <td className="p-3 text-[var(--text-secondary)]">{u.roleName || '—'}</td>
                             <td className="p-3 text-[var(--text-secondary)]">{u.departmentId ? (departments.find((d: any) => d.id === u.departmentId)?.name || '—') : '—'}</td>
-                            <td className="p-3"><StatusBadge status={u.status || 'active'} /></td>
+                            <td className="p-3"><span className={`text-[10px] px-1.5 py-0.5 rounded ${u.status === 'active' ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]'}`}>{u.status || 'actif'}</span></td>
                             <td className="p-3 text-[var(--text-muted)]">{u.createdAt ? new Date(u.createdAt).toLocaleDateString('fr-FR') : '—'}</td>
                             <td className="p-3"><div className="flex items-center justify-center gap-1"><button onClick={() => handleDeleteUser(u.uid)} className="p-1.5 rounded hover:bg-white/5 text-[var(--accent-danger)]"><Trash2 size={12} /></button></div></td>
                           </tr>

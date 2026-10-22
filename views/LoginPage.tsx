@@ -83,6 +83,7 @@ export function LoginPage() {
     <AuthShell
       title="Heureux de vous retrouver."
       subtitle="Connectez-vous à votre espace de gestion IDIBAGES."
+      compact
     >
       <form
         className="id-auth-form"
@@ -90,46 +91,54 @@ export function LoginPage() {
         aria-busy={login.isPending}
       >
         {/* OAuth requires a full browser navigation to the server endpoint. */}
-        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-        <a href="/api/auth/google/start" className="id-auth-google">
-          <span aria-hidden="true">G</span> Continuer avec Google
-        </a>
-        <div className="id-auth-divider">
-          <span>ou avec votre e-mail</span>
+        <div className="id-auth-methods">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/api/auth/google/start" className="id-auth-google">
+            <span aria-hidden="true">G</span> Continuer avec Google
+          </a>
+          <div className="id-auth-divider">
+            <span>ou avec votre e-mail</span>
+          </div>
         </div>
-        <AuthField
-          id="login-email"
-          name="email"
-          label="Adresse e-mail"
-          type="email"
-          autoComplete="username"
-          icon={<Mail size={17} />}
-          value={email}
-          onChange={event => setEmail(event.target.value)}
-          required
-          disabled={login.isPending}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? "login-error" : undefined}
-        />
-        <AuthField
-          id="login-password"
-          name="password"
-          label="Mot de passe"
-          type="password"
-          autoComplete="current-password"
-          icon={<KeyRound size={17} />}
-          value={password}
-          onChange={event => setPassword(event.target.value)}
-          required
-          disabled={login.isPending}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? "login-error" : undefined}
-        />
-        {error && (
-          <p id="login-error" role="alert" className="id-auth-error">
-            {error}
-          </p>
-        )}
+        <div className="id-auth-credentials">
+          <div className="id-auth-section-heading">
+            <span>Vos identifiants</span>
+            <span>Champs obligatoires&nbsp;*</span>
+          </div>
+          <AuthField
+            id="login-email"
+            name="email"
+            label="Adresse e-mail"
+            type="email"
+            autoComplete="username"
+            icon={<Mail size={17} />}
+            value={email}
+            onChange={event => setEmail(event.target.value)}
+            required
+            disabled={login.isPending}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? "login-error" : undefined}
+          />
+          <AuthField
+            id="login-password"
+            name="password"
+            label="Mot de passe"
+            type="password"
+            autoComplete="current-password"
+            icon={<KeyRound size={17} />}
+            value={password}
+            onChange={event => setPassword(event.target.value)}
+            required
+            disabled={login.isPending}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? "login-error" : undefined}
+          />
+          {error && (
+            <p id="login-error" role="alert" className="id-auth-error">
+              {error}
+            </p>
+          )}
+        </div>
         <button
           type="submit"
           disabled={login.isPending}

@@ -9,7 +9,7 @@ import type {
   PortalUser, PortalProject, PortalInvoice, PortalPayment, PortalContract, PortalActivity, PortalNotification, PortalNews,
   Opportunity, TimeEntry, EmployeeContract, EmailTemplate, PortalTicket, AuditLogEntry, Meeting, InvoiceReminder, FinancialReport,
   Feedback360, PersonalDevelopmentPlan, DSFForm,
-  SalesOrder, DeliveryNote,
+  SalesOrder, DeliveryNote, BankTransaction, FinanceBudget,
 } from '@/types';
 import {
   seedCompany, seedUsers, seedRoles, seedDepartments,
@@ -43,6 +43,8 @@ export interface Database {
   tasks: Task[];
   invoices: Invoice[];
   accountingEntries: AccountingEntry[];
+  bankTransactions: BankTransaction[];
+  financeBudgets: FinanceBudget[];
   chartAccounts: ChartAccount[];
   assets: Asset[];
   tickets: Ticket[];
@@ -108,6 +110,8 @@ function getDefaultDb(): Database {
     tasks: [...seedTasks],
     invoices: [...seedInvoices],
     accountingEntries: [...seedAccountingEntries],
+    bankTransactions: [],
+    financeBudgets: [],
     chartAccounts: [...seedChartAccounts],
     assets: [...seedAssets],
     tickets: [...seedTickets],
@@ -186,6 +190,8 @@ function loadDb(): Database {
           tasks: parsed.tasks ?? defaults.tasks,
           invoices: parsed.invoices ?? defaults.invoices,
           accountingEntries: parsed.accountingEntries ?? defaults.accountingEntries,
+          bankTransactions: parsed.bankTransactions ?? defaults.bankTransactions,
+          financeBudgets: parsed.financeBudgets ?? defaults.financeBudgets,
           chartAccounts: parsed.chartAccounts ?? defaults.chartAccounts,
           assets: parsed.assets ?? defaults.assets,
           tickets: parsed.tickets ?? defaults.tickets,

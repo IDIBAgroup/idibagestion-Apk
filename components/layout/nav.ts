@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, FolderKanban, Receipt, Calculator, Building2, Users, Shield,
   Settings, HelpCircle, Lightbulb, Calendar, QrCode, BarChart3, Wallet, FileText,
-  UserCheck, Briefcase, DollarSign, Handshake, Award, Printer, Radar, TrendingUp,
+  UserCheck, Briefcase, DollarSign, Handshake, Award, Radar, TrendingUp,
   Zap, MessageSquare, Star, Brain, BookOpen, FileBarChart, Truck, Globe,
   CreditCard, Crown, Coins, Sparkles, SlidersHorizontal, ShoppingCart, PackageCheck,
   type LucideIcon,
@@ -52,7 +52,6 @@ export const navModules: NavModule[] = [
       { label: 'Devis', icon: FileText, href: '/finance/quotes' },
       { label: 'Bons de commande', icon: ShoppingCart, href: '/commercial/orders' },
       { label: 'Bons de livraison', icon: PackageCheck, href: '/commercial/delivery-notes' },
-      { label: 'Papier En-tête', icon: Printer, href: '/finance/invoice-header' },
     ],
   },
   {
@@ -65,6 +64,8 @@ export const navModules: NavModule[] = [
       { label: 'Clôture Exercice', icon: FileText, href: '/finance/closing' },
       { label: 'DSF OHADA', icon: Globe, href: '/finance/dsf' },
       { label: 'Immobilisations', icon: QrCode, href: '/finance/assets' },
+      { label: 'Banque & rapprochement', icon: CreditCard, href: '/finance/banking' },
+      { label: 'Analytique & budgets', icon: TrendingUp, href: '/finance/analytics' },
       { label: 'Dépenses', icon: Wallet, href: '/finance/expenses' },
       { label: 'Rapports', icon: BarChart3, href: '/finance/reports' },
     ],

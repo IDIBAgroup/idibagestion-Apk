@@ -3,6 +3,7 @@ import { createRouter, authedQuery, assertCompanyAccess } from "./middleware";
 import { getDb } from "./queries/connection";
 import { clients, products } from "@db/schema";
 import { eq, desc, and } from "drizzle-orm";
+import { assertSubscriptionFeature, assertSubscriptionQuota } from "./subscription-quota";
 
 // ============================================
 // CLIENT ROUTER — Portefeuille Clients (NIU / RCCM)
@@ -13,6 +14,7 @@ export const clientRouter = createRouter({
     .input(z.object({ companyId: z.number() }))
     .query(async ({ ctx, input }) => {
       await assertCompanyAccess(ctx.user, input.companyId);
+      await assertSubscriptionFeature(input.companyId, "customers");
       const db = getDb();
       return db
         .select()
@@ -26,7 +28,10 @@ export const clientRouter = createRouter({
     .query(async ({ ctx, input }) => {
       const db = getDb();
       const rows = await db.select().from(clients).where(eq(clients.id, input.id)).limit(1);
-      if (rows[0]) await assertCompanyAccess(ctx.user, rows[0].companyId);
+      if (rows[0]) {
+        await assertCompanyAccess(ctx.user, rows[0].companyId);
+        await assertSubscriptionFeature(rows[0].companyId, "customers");
+      }
       return rows[0] ?? null;
     }),
 
@@ -50,6 +55,8 @@ export const clientRouter = createRouter({
     )
     .mutation(async ({ ctx, input }) => {
       await assertCompanyAccess(ctx.user, input.companyId);
+      await assertSubscriptionFeature(input.companyId, "customers");
+      await assertSubscriptionQuota(input.companyId, "clients");
       const db = getDb();
       const [res] = await db.insert(clients).values(input).$returningId();
       return { id: res.id, ...input };
@@ -79,6 +86,7 @@ export const clientRouter = createRouter({
       const [client] = await db.select({ companyId: clients.companyId }).from(clients).where(eq(clients.id, id)).limit(1);
       if (!client) return { success: false };
       await assertCompanyAccess(ctx.user, client.companyId);
+      await assertSubscriptionFeature(client.companyId, "customers");
       await db.update(clients).set(data).where(eq(clients.id, id));
       return { success: true };
     }),
@@ -90,6 +98,7 @@ export const clientRouter = createRouter({
       const [client] = await db.select({ companyId: clients.companyId }).from(clients).where(eq(clients.id, input.id)).limit(1);
       if (!client) return { success: false };
       await assertCompanyAccess(ctx.user, client.companyId);
+      await assertSubscriptionFeature(client.companyId, "customers");
       await db.delete(clients).where(eq(clients.id, input.id));
       return { success: true };
     }),

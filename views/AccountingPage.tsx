@@ -6,9 +6,13 @@ import {
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { useUIStore } from '@/stores/uiStore';
-import { getAll, addAndNotify } from '@/lib/db';
-import type { ChartAccount, AccountingEntry, FinancialReport, Invoice } from '@/types';
+import type { ChartAccount, AccountingEntry, FinancialReport } from '@/types';
 import { filterOhadaChart, getOhadaChart, OHADA_POSTING_ACCOUNTS } from '@/data/ohada-chart';
+import { OHADA_CURRENCY_CODES } from '@/lib/ohada/countries';
+import { usePlatformFinancialSettings } from '@/hooks/usePlatformFinancialSettings';
+import { useActiveCompany } from '@/hooks/useActiveCompany';
+import { trpc } from '@/providers/trpc';
+import { summarizeAccountingEntries } from '@/lib/accounting/journal';
 
 function TreeNode({ account, depth = 0 }: { account: ChartAccount; depth?: number }) {
   const [expanded, setExpanded] = useState(depth < 1);
@@ -34,29 +38,53 @@ function TreeNode({ account, depth = 0 }: { account: ChartAccount; depth?: numbe
 
 export function AccountingPage() {
   const { setCurrentPageTitle, showToast } = useUIStore();
-  const [activeTab, setActiveTab] = useState<'chart' | 'entries' | 'reports'>('chart');
+  const { currency } = usePlatformFinancialSettings();
+  const { companyId } = useActiveCompany();
+  const utils = trpc.useUtils();
+  const entriesQuery = trpc.accounting.journal.list.useQuery({ companyId: companyId ?? 0 }, { enabled: Boolean(companyId) });
+  const reportsQuery = trpc.accounting.report.list.useQuery({ companyId: companyId ?? 0 }, { enabled: Boolean(companyId) });
+  const periodsQuery = trpc.accounting.period.list.useQuery({ companyId: companyId ?? 0 }, { enabled: Boolean(companyId) });
+  const salesDocumentsQuery = trpc.salesDocument.list.useQuery({ companyId: companyId ?? 0 }, { enabled: Boolean(companyId) });
+  const [activeTab, setActiveTab] = useState<'chart' | 'entries' | 'ledger' | 'trialBalance' | 'reports'>('chart');
   const [search, setSearch] = useState('');
   const [showEntryForm, setShowEntryForm] = useState(false);
   const [reportType, setReportType] = useState<'income_statement' | 'balance_sheet' | 'cash_flow'>('income_statement');
-  const [reportPeriod, setReportPeriod] = useState('2024');
+  const [reportPeriod, setReportPeriod] = useState(String(new Date().getFullYear()));
+  const [transactionCurrency, setTransactionCurrency] = useState(currency);
+  const [exchangeRate, setExchangeRate] = useState('1');
+  const [ledgerAccountCode, setLedgerAccountCode] = useState('4111');
+  const [ledgerCursor, setLedgerCursor] = useState<{ date: string; entryId: string; lineNumber: number } | null>(null);
+  const trialBalanceQuery = trpc.accounting.trialBalance.list.useQuery(
+    { companyId: companyId ?? 0, fiscalYear: Number(reportPeriod) },
+    { enabled: Boolean(companyId) && activeTab === 'trialBalance' },
+  );
+  const ledgerQuery = trpc.accounting.ledger.list.useQuery(
+    { companyId: companyId ?? 0, accountCode: ledgerAccountCode, fiscalYear: Number(reportPeriod), cursor: ledgerCursor ?? undefined },
+    { enabled: Boolean(companyId) && activeTab === 'ledger' },
+  );
 
   // New entry form state
   const [entryForm, setEntryForm] = useState({
     date: new Date().toISOString().split('T')[0],
-    pieceNumber: `PC-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+    pieceNumber: `PC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
     journal: 'VEN',
     label: '',
+    analyticCode: '',
     debitAccountCode: '4111',
-    creditAccountCode: '7061',
+    creditAccountCode: '706',
     amount: 500000,
   });
 
   useEffect(() => { setCurrentPageTitle('Comptabilité SYSCOHADA'); }, [setCurrentPageTitle]);
+  useEffect(() => { setLedgerCursor(null); }, [ledgerAccountCode, reportPeriod]);
 
-  const chartAccounts = getOhadaChart(getAll('chartAccounts') as ChartAccount[]);
-  const entries = getAll('accountingEntries') as AccountingEntry[];
-  const invoices = getAll('invoices') as Invoice[];
-  const reports = (getAll('financialReports') as FinancialReport[]) || [];
+  const chartAccounts = getOhadaChart();
+  const entries = (entriesQuery.data ?? []) as AccountingEntry[];
+  const invoices = (salesDocumentsQuery.data ?? []).filter((document) => document.kind === 'invoice');
+  const reports = (reportsQuery.data ?? []) as FinancialReport[];
+  const fiscalPeriods = periodsQuery.data?.periods ?? [];
+  const selectedFiscalPeriod = fiscalPeriods.find((period) => period.fiscalYear === Number(reportPeriod));
+  const selectedPeriodStatus = selectedFiscalPeriod?.status ?? 'open';
 
   const filteredAccounts = filterOhadaChart(chartAccounts, search);
 
@@ -64,33 +92,64 @@ export function AccountingPage() {
   const totalCredit = entries.reduce((s, e) => s + e.credit, 0);
 
   const formatXAF = (amount: number) =>
-    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XAF', minimumFractionDigits: 0 }).format(amount);
+    new Intl.NumberFormat('fr-FR', { style: 'currency', currency, minimumFractionDigits: 0 }).format(amount);
 
   // Financial report calculations
-  const reportData = useMemo(() => {
-    const revenue = entries.filter(e => e.accountCode.startsWith('7')).reduce((s, e) => s + e.credit - e.debit, 0);
-    const expenses = entries.filter(e => e.accountCode.startsWith('6')).reduce((s, e) => s + e.debit - e.credit, 0);
-    const assets = entries.filter(e => e.accountCode.startsWith('2') || e.accountCode.startsWith('3') || e.accountCode.startsWith('4') || e.accountCode.startsWith('5')).reduce((s, e) => s + e.debit - e.credit, 0);
-    const liabilities = entries.filter(e => e.accountCode.startsWith('1')).reduce((s, e) => s + e.credit - e.debit, 0);
-    const cashIn = entries.filter(e => e.accountCode.startsWith('7') || (e.accountCode.startsWith('4') && e.credit > 0)).reduce((s, e) => s + e.credit, 0);
-    const cashOut = entries.filter(e => e.accountCode.startsWith('6') || (e.accountCode.startsWith('4') && e.debit > 0)).reduce((s, e) => s + e.debit, 0);
-    return { revenue, expenses, netIncome: revenue - expenses, assets, liabilities, equity: assets - liabilities, cashIn, cashOut, netCash: cashIn - cashOut };
-  }, [entries]);
+  const reportData = useMemo(() => summarizeAccountingEntries(entries), [entries]);
+  const generateReport = trpc.accounting.report.generate.useMutation({
+    onSuccess: async () => {
+      if (companyId) await utils.accounting.report.list.invalidate({ companyId });
+      showToast('Rapport enregistré dans l’entreprise.', 'success');
+    },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const closeFiscalPeriod = trpc.accounting.period.close.useMutation({
+    onSuccess: async () => {
+      if (companyId) await utils.accounting.period.list.invalidate({ companyId });
+      showToast('Exercice clôturé. Les nouvelles écritures sur cette période sont bloquées.', 'success');
+    },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const reopenFiscalPeriod = trpc.accounting.period.reopen.useMutation({
+    onSuccess: async () => {
+      if (companyId) await utils.accounting.period.list.invalidate({ companyId });
+      showToast('Exercice réouvert.', 'success');
+    },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const postEntry = trpc.accounting.journal.postEntry.useMutation({
+    onSuccess: async (posted) => {
+      if (companyId) await utils.accounting.journal.list.invalidate({ companyId });
+      setEntryForm((current) => ({ ...current, date: new Date().toISOString().slice(0, 10), pieceNumber: `PC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`, label: '', amount: 0 }));
+      setShowEntryForm(false);
+      showToast(`Écriture équilibrée de ${posted[0]?.debit.toLocaleString('fr-FR')} ${currency} enregistrée.`, 'success');
+    },
+    onError: (error) => showToast(error.message, 'error'),
+  });
 
   const handleGenerateReport = () => {
-    const report: FinancialReport = {
-      id: `report-${Date.now()}`,
-      type: reportType,
-      period: reportPeriod,
-      startDate: `${reportPeriod}-01-01`,
-      endDate: `${reportPeriod}-12-31`,
-      data: reportData as unknown as Record<string, number>,
-      generatedAt: new Date().toISOString(),
-      generatedBy: 'user-1',
-      companyId: 'comp-1',
-    };
-    addAndNotify('financialReports', report);
-    showToast('Rapport généré avec succès', 'success');
+    if (companyId) generateReport.mutate({ companyId, type: reportType, fiscalYear: Number(reportPeriod) });
+  };
+
+  const downloadReport = (report: FinancialReport) => {
+    const rows = [['Indicator', 'Amount', currency], ...Object.entries(report.data).map(([key, value]) => [key, String(value), currency])];
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(';')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `rapport-${report.type}-${report.period}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const exportEntriesCsv = () => {
+    const rows = [['Date', 'Journal', 'Pièce', 'Compte', 'Libellé', 'Axe analytique', 'Montant opération', 'Devise opération', 'Taux conversion', 'Devise de base', 'Débit base', 'Crédit base'], ...entries.map((entry) => [entry.date, entry.journal, entry.pieceNumber, entry.accountCode, entry.label, entry.analyticCode || '', String(entry.transactionAmount ?? ''), entry.transactionCurrency || '', String(entry.exchangeRate ?? ''), entry.baseCurrency || currency, String(entry.debit), String(entry.credit)])];
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(';')).join('\r\n');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+    link.download = `ecritures-comptables-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   return (
@@ -105,6 +164,12 @@ export function AccountingPage() {
         </button>
         <button onClick={() => setActiveTab('reports')} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'reports' ? 'bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)]'}`}>
           <BarChart3 size={14} /> Rapports Financiers
+        </button>
+        <button onClick={() => setActiveTab('ledger')} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'ledger' ? 'bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)]'}`}>
+          <BookOpen size={14} /> Grand livre
+        </button>
+        <button onClick={() => setActiveTab('trialBalance')} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'trialBalance' ? 'bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)]'}`}>
+          <FileText size={14} /> Balance générale
         </button>
       </div>
 
@@ -134,7 +199,7 @@ export function AccountingPage() {
                 {totalDebit === totalCredit ? 'Équilibré ✓' : 'Déséquilibre !'}
               </div>
             </div>
-            <button onClick={() => setShowEntryForm(true)} className="btn-primary h-9"><Plus size={16} /> Nouvelle Écriture</button>
+            <div className="flex gap-2"><button onClick={exportEntriesCsv} className="btn-secondary h-9"><Download size={14} /> Exporter CSV</button><button onClick={() => setShowEntryForm(true)} className="btn-primary h-9"><Plus size={16} /> Nouvelle Écriture</button></div>
           </div>
           <GlassCard>
             <div className="overflow-x-auto">
@@ -184,10 +249,14 @@ export function AccountingPage() {
                 <option value="cash_flow">Flux de Trésorerie</option>
               </select>
               <select value={reportPeriod} onChange={(e) => setReportPeriod(e.target.value)} className="h-9 px-3 glass-input text-sm">
-                <option value="2024">2024</option>
-                <option value="2023">2023</option>
+                {Array.from({ length: 7 }, (_, index) => new Date().getFullYear() - index).map((year) => <option key={year} value={year}>{year}</option>)}
               </select>
-              <button onClick={handleGenerateReport} className="btn-primary h-9"><BarChart3 size={14} /> Générer</button>
+              <button onClick={handleGenerateReport} disabled={generateReport.isPending} className="btn-primary h-9 disabled:opacity-50"><BarChart3 size={14} /> {generateReport.isPending ? 'Génération…' : 'Générer'}</button>
+              <span className={`rounded px-2.5 py-1 text-xs ${selectedPeriodStatus === 'closed' ? 'bg-[var(--accent-danger)]/10 text-[var(--accent-danger)]' : 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]'}`}>
+                Exercice {selectedFiscalPeriod?.label ?? reportPeriod} · {selectedPeriodStatus === 'closed' ? 'Clôturé' : 'Ouvert'}
+              </span>
+              {periodsQuery.data?.canClose && selectedPeriodStatus === 'open' && <button type="button" onClick={() => companyId && closeFiscalPeriod.mutate({ companyId, fiscalYear: Number(reportPeriod) })} disabled={closeFiscalPeriod.isPending} className="btn-secondary h-9 disabled:opacity-50">{closeFiscalPeriod.isPending ? 'Clôture…' : 'Clôturer l’exercice'}</button>}
+              {periodsQuery.data?.canReopen && selectedPeriodStatus === 'closed' && <button type="button" onClick={() => companyId && reopenFiscalPeriod.mutate({ companyId, fiscalYear: Number(reportPeriod) })} disabled={reopenFiscalPeriod.isPending} className="btn-secondary h-9 disabled:opacity-50">{reopenFiscalPeriod.isPending ? 'Réouverture…' : 'Réouvrir l’exercice'}</button>}
             </div>
           </GlassCard>
 
@@ -292,7 +361,7 @@ export function AccountingPage() {
                           <p className="text-xs text-[var(--text-muted)]">{report.period} — Généré le {new Date(report.generatedAt).toLocaleDateString('fr-FR')}</p>
                         </div>
                       </div>
-                      <button className="p-2 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors">
+                      <button onClick={() => downloadReport(report)} aria-label={`Télécharger le rapport ${report.period}`} className="p-2 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors">
                         <Download size={14} />
                       </button>
                     </div>
@@ -302,6 +371,79 @@ export function AccountingPage() {
             </GlassCard>
           )}
         </div>
+      )}
+
+      {activeTab === 'ledger' && (
+        <GlassCard>
+          <div className="space-y-4 p-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-[var(--text-primary)]">Grand livre par compte</h2>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">Solde d’ouverture, mouvements et solde progressif pour l’exercice sélectionné.</p>
+              </div>
+              <label className="w-full max-w-xs text-xs text-[var(--text-secondary)]">
+                Compte SYSCOHADA
+                <select value={ledgerAccountCode} onChange={(event) => { setLedgerAccountCode(event.target.value); setLedgerCursor(null); }} className="mt-1 h-9 w-full px-2 glass-input text-sm">
+                  {OHADA_POSTING_ACCOUNTS.map((account) => <option key={account.code} value={account.code}>{account.code} — {account.label}</option>)}
+                </select>
+              </label>
+            </div>
+            {ledgerQuery.isLoading ? <p className="py-8 text-center text-sm text-[var(--text-muted)]">Chargement du grand livre…</p> : ledgerQuery.error ? <p role="alert" className="py-8 text-center text-sm text-[var(--accent-danger)]">{ledgerQuery.error.message}</p> : ledgerQuery.data && (
+              <>
+                <div className="flex flex-wrap justify-between gap-2 rounded-lg bg-[var(--bg-elevated)] px-3 py-2 text-xs">
+                  <span className="text-[var(--text-secondary)]">{ledgerQuery.data.accountCode} · {ledgerQuery.data.accountLabel} · {ledgerQuery.data.period}</span>
+                  <span className="font-medium text-[var(--text-primary)]">Solde d’ouverture : {formatXAF(ledgerQuery.data.openingBalance)}</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[850px] text-left text-xs">
+                    <thead className="border-b border-[var(--divider)] text-[var(--text-muted)]"><tr>{['Date', 'Journal', 'Pièce', 'Libellé', 'Débit', 'Crédit', 'Solde'].map((label) => <th key={label} className="px-3 py-2 font-medium">{label}</th>)}</tr></thead>
+                    <tbody className="divide-y divide-[var(--divider)]">
+                      {ledgerQuery.data.entries.map((entry) => <tr key={`${entry.entryId}-${entry.lineNumber}`} className="text-[var(--text-primary)]">
+                        <td className="px-3 py-2 whitespace-nowrap">{entry.date}</td><td className="px-3 py-2">{entry.journal}</td><td className="px-3 py-2 font-mono">{entry.pieceNumber}</td><td className="px-3 py-2">{entry.label}</td>
+                        <td className="px-3 py-2 text-right">{entry.debit ? formatXAF(entry.debit) : '—'}</td><td className="px-3 py-2 text-right">{entry.credit ? formatXAF(entry.credit) : '—'}</td><td className="px-3 py-2 text-right font-semibold">{formatXAF(entry.balance)}</td>
+                      </tr>)}
+                      {!ledgerQuery.data.entries.length && <tr><td colSpan={7} className="px-3 py-8 text-center text-[var(--text-muted)]">Aucun mouvement sur ce compte pour cet exercice.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+                {ledgerQuery.data.nextCursor && <div className="flex justify-end"><button type="button" onClick={() => setLedgerCursor(ledgerQuery.data!.nextCursor)} disabled={ledgerQuery.isFetching} className="btn-secondary h-9 px-3 text-xs disabled:opacity-50">{ledgerQuery.isFetching ? 'Chargement…' : 'Page suivante'}</button></div>}
+              </>
+            )}
+          </div>
+        </GlassCard>
+      )}
+
+      {activeTab === 'trialBalance' && (
+        <GlassCard>
+          <div className="space-y-4 p-4">
+            <div><h2 className="text-sm font-semibold text-[var(--text-primary)]">Balance générale</h2><p className="mt-1 text-xs text-[var(--text-muted)]">Soldes d’ouverture, mouvements de l’exercice et soldes de clôture par compte.</p></div>
+            {trialBalanceQuery.isLoading ? <p className="py-8 text-center text-sm text-[var(--text-muted)]">Calcul de la balance…</p> : trialBalanceQuery.error ? <p role="alert" className="py-8 text-center text-sm text-[var(--accent-danger)]">{trialBalanceQuery.error.message}</p> : trialBalanceQuery.data && (
+              <>
+                <div className="text-xs text-[var(--text-secondary)]">Exercice {trialBalanceQuery.data.period} · du {trialBalanceQuery.data.startDate} au {trialBalanceQuery.data.endDate}</div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1000px] text-left text-xs">
+                    <thead className="border-b border-[var(--divider)] text-[var(--text-muted)]"><tr>{['Compte', 'Libellé', 'Ouverture débit', 'Ouverture crédit', 'Mouvements débit', 'Mouvements crédit', 'Solde débiteur', 'Solde créditeur'].map((label) => <th key={label} className="px-3 py-2 font-medium">{label}</th>)}</tr></thead>
+                    <tbody className="divide-y divide-[var(--divider)]">
+                      {trialBalanceQuery.data.rows.map((row) => <tr key={row.accountCode} className="text-[var(--text-primary)]">
+                        <td className="px-3 py-2 font-mono font-medium">{row.accountCode}</td><td className="px-3 py-2">{row.accountLabel}</td>
+                        <td className="px-3 py-2 text-right">{row.openingDebit ? formatXAF(row.openingDebit) : '—'}</td><td className="px-3 py-2 text-right">{row.openingCredit ? formatXAF(row.openingCredit) : '—'}</td>
+                        <td className="px-3 py-2 text-right">{row.debit ? formatXAF(row.debit) : '—'}</td><td className="px-3 py-2 text-right">{row.credit ? formatXAF(row.credit) : '—'}</td>
+                        <td className="px-3 py-2 text-right font-medium">{row.closingDebit ? formatXAF(row.closingDebit) : '—'}</td><td className="px-3 py-2 text-right font-medium">{row.closingCredit ? formatXAF(row.closingCredit) : '—'}</td>
+                      </tr>)}
+                      {!trialBalanceQuery.data.rows.length && <tr><td colSpan={8} className="px-3 py-8 text-center text-[var(--text-muted)]">Aucune écriture comptabilisée pour cet exercice.</td></tr>}
+                    </tbody>
+                    <tfoot className="border-t border-[var(--divider)] bg-[var(--bg-elevated)] font-semibold text-[var(--text-primary)]"><tr>
+                      <td colSpan={2} className="px-3 py-2">Totaux</td>
+                      <td className="px-3 py-2 text-right">{formatXAF(trialBalanceQuery.data.totals.openingDebit)}</td><td className="px-3 py-2 text-right">{formatXAF(trialBalanceQuery.data.totals.openingCredit)}</td>
+                      <td className="px-3 py-2 text-right">{formatXAF(trialBalanceQuery.data.totals.debit)}</td><td className="px-3 py-2 text-right">{formatXAF(trialBalanceQuery.data.totals.credit)}</td>
+                      <td className="px-3 py-2 text-right">{formatXAF(trialBalanceQuery.data.totals.closingDebit)}</td><td className="px-3 py-2 text-right">{formatXAF(trialBalanceQuery.data.totals.closingCredit)}</td>
+                    </tr></tfoot>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </GlassCard>
       )}
 
       {/* Entry Form Modal */}
@@ -341,6 +483,11 @@ export function AccountingPage() {
                     </div>
                   </div>
 
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Axe analytique / centre de coût</label>
+                    <input value={entryForm.analyticCode} onChange={e => setEntryForm({ ...entryForm, analyticCode: e.target.value })} className="w-full h-9 px-3 glass-input text-xs" placeholder="Ex. Administration, Projet A, Vente" />
+                  </div>
+
                   <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-2">
                     <p className="text-xs font-bold text-[var(--accent-primary)]">Ligne 1 — Débit</p>
                     <select
@@ -368,57 +515,36 @@ export function AccountingPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Montant Équilibré (FCFA) *</label>
-                    <input
-                      type="number"
-                      value={entryForm.amount}
-                      onChange={e => setEntryForm({ ...entryForm, amount: Number(e.target.value) })}
-                      className="w-full h-9 px-3 glass-input text-xs font-mono font-bold"
-                    />
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Montant de l’opération *</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <select value={transactionCurrency} onChange={e => { setTransactionCurrency(e.target.value); if (e.target.value === currency) setExchangeRate('1'); }} className="h-9 px-2 glass-input text-xs" aria-label="Devise de l’opération">
+                        {[...new Set([currency, ...OHADA_CURRENCY_CODES, 'EUR', 'USD'])].map(code => <option key={code} value={code}>{code}</option>)}
+                      </select>
+                      <input type="number" min="0.000001" step="0.000001" value={transactionCurrency === currency ? 1 : exchangeRate} disabled={transactionCurrency === currency} onChange={e => setExchangeRate(e.target.value)} className="h-9 px-2 glass-input text-xs" aria-label={`Taux ${transactionCurrency} vers ${currency}`} title={`Taux de conversion vers ${currency}`} />
+                      <input type="number" min="0.01" step="0.01" value={entryForm.amount} onChange={e => setEntryForm({ ...entryForm, amount: Number(e.target.value) })} className="h-9 px-3 glass-input text-xs font-mono font-bold" aria-label={`Montant en ${transactionCurrency}`} />
+                    </div>
+                    <p className="mt-1 text-[10px] text-[var(--text-muted)]">Taux saisi manuellement · comptabilisation : {(entryForm.amount * (transactionCurrency === currency ? 1 : Number(exchangeRate) || 0)).toLocaleString('fr-FR')} {currency}</p>
                   </div>
 
                   <div className="flex gap-3 pt-2">
                     <button onClick={() => setShowEntryForm(false)} className="flex-1 btn-ghost h-9 text-xs justify-center">Annuler</button>
                     <button
                       onClick={() => {
-                        if (!entryForm.label.trim() || entryForm.amount <= 0) {
-                          showToast('Veuillez renseigner le libellé et le montant', 'warning');
+                        const rate = transactionCurrency === currency ? 1 : Number(exchangeRate);
+                        if (!companyId) { showToast('Sélectionnez une entreprise avant de comptabiliser une écriture.', 'warning'); return; }
+                        if (!entryForm.label.trim() || !entryForm.pieceNumber.trim() || entryForm.amount <= 0 || !Number.isFinite(rate) || rate <= 0) {
+                          showToast('Renseignez la pièce, le libellé, le montant et un taux valides.', 'warning');
                           return;
                         }
-                        const debitAcc = OHADA_POSTING_ACCOUNTS.find(a => a.code === entryForm.debitAccountCode);
-                        const creditAcc = OHADA_POSTING_ACCOUNTS.find(a => a.code === entryForm.creditAccountCode);
-
-                        const entry1: AccountingEntry = {
-                          id: `entry-${Date.now()}-1`,
-                          date: entryForm.date,
-                          pieceNumber: entryForm.pieceNumber,
-                          journal: entryForm.journal,
-                          accountCode: entryForm.debitAccountCode,
-                          accountLabel: debitAcc?.label.split('(')[0].trim() || 'Compte Débit',
-                          label: entryForm.label,
-                          debit: entryForm.amount,
-                          credit: 0,
-                          companyId: 'comp-1',
-                        };
-
-                        const entry2: AccountingEntry = {
-                          id: `entry-${Date.now()}-2`,
-                          date: entryForm.date,
-                          pieceNumber: entryForm.pieceNumber,
-                          journal: entryForm.journal,
-                          accountCode: entryForm.creditAccountCode,
-                          accountLabel: creditAcc?.label.split('(')[0].trim() || 'Compte Crédit',
-                          label: entryForm.label,
-                          debit: 0,
-                          credit: entryForm.amount,
-                          companyId: 'comp-1',
-                        };
-
-                        addAndNotify('accountingEntries', entry1);
-                        addAndNotify('accountingEntries', entry2);
-                        setShowEntryForm(false);
-                        showToast(`Écriture équilibrée de ${entryForm.amount.toLocaleString('fr-FR')} FCFA enregistrée !`, 'success');
+                        postEntry.mutate({
+                          companyId, date: entryForm.date, pieceNumber: entryForm.pieceNumber.trim(),
+                          journal: entryForm.journal as 'VEN' | 'ACH' | 'BNQ' | 'CAI' | 'OD',
+                          label: entryForm.label.trim(), analyticCode: entryForm.analyticCode.trim() || undefined,
+                          debitAccountCode: entryForm.debitAccountCode, creditAccountCode: entryForm.creditAccountCode,
+                          amount: entryForm.amount, transactionCurrency, exchangeRate: rate,
+                        });
                       }}
+                      disabled={postEntry.isPending}
                       className="flex-1 btn-primary h-9 text-xs font-bold justify-center"
                     >
                       Enregistrer l'écriture

@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { transactions, subscriptions } from "@db/schema";
 import { getDb } from "../queries/connection";
 import { getPaymentGateway, type VerifiedPaymentEvent } from "./gateway";
@@ -68,10 +68,18 @@ export function createPaymentWebhookHandler() {
             paymentProvider: gateway.name,
             providerTransactionId: event.providerReference,
           }).where(and(eq(transactions.id, transaction.id), eq(transactions.status, "pending")));
+          if (transaction.subscriptionId) {
+            await tx.update(subscriptions).set({ status: "expired" })
+              .where(and(
+                eq(subscriptions.id, transaction.subscriptionId),
+                eq(subscriptions.companyId, transaction.companyId),
+                eq(subscriptions.status, "past_due"),
+              ));
+          }
           return { kind: "failed" as const };
         }
 
-        if (transaction.type !== "subscription" && transaction.type !== "renewal") {
+        if (transaction.type !== "subscription" && transaction.type !== "renewal" && transaction.type !== "upgrade") {
           return { kind: "unsupported-type" as const };
         }
         if (!transaction.subscriptionId) return { kind: "missing-subscription" as const };
@@ -83,10 +91,17 @@ export function createPaymentWebhookHandler() {
         if (!subscription) return { kind: "missing-subscription" as const };
 
         const paidAt = new Date();
-        const periodStart = subscription.currentPeriodEnd > paidAt && subscription.status !== "trial"
-          ? subscription.currentPeriodEnd
-          : paidAt;
-        const periodEnd = addBillingCycle(periodStart, subscription.billingCycle);
+        let checkoutDetails: { replacesSubscriptionId?: number | null; periodEndAt?: string | null } = {};
+        try {
+          checkoutDetails = transaction.description ? JSON.parse(transaction.description) : {};
+        } catch {
+          checkoutDetails = {};
+        }
+        const periodStart = paidAt;
+        const requestedPeriodEnd = checkoutDetails.periodEndAt ? new Date(checkoutDetails.periodEndAt) : null;
+        const periodEnd = requestedPeriodEnd && Number.isFinite(requestedPeriodEnd.getTime()) && requestedPeriodEnd > paidAt
+          ? requestedPeriodEnd
+          : addBillingCycle(periodStart, subscription.billingCycle);
 
         await tx.update(transactions).set({
           status: "completed",
@@ -105,6 +120,20 @@ export function createPaymentWebhookHandler() {
           nextPaymentAt: periodEnd,
           autoRenew: false,
         }).where(eq(subscriptions.id, subscription.id));
+
+        const previousId = checkoutDetails.replacesSubscriptionId;
+        if (transaction.type === "upgrade" && typeof previousId === "number" && Number.isSafeInteger(previousId) && previousId !== subscription.id) {
+          await tx.update(subscriptions).set({
+            status: "cancelled",
+            cancelledAt: paidAt,
+            cancelReason: "Remplacé après confirmation du paiement du nouveau forfait.",
+            autoRenew: false,
+          }).where(and(
+            eq(subscriptions.id, previousId),
+            eq(subscriptions.companyId, transaction.companyId),
+            inArray(subscriptions.status, ["active", "trial"]),
+          ));
+        }
 
         return { kind: "confirmed" as const };
       });

@@ -45,7 +45,7 @@ function requireRole(role: string) {
 export const authedQuery = t.procedure.use(requireAuth);
 export const adminQuery = authedQuery.use(requireRole("admin"));
 
-async function getCompanyAccess(user: User, companyId: number) {
+async function getCompanyAccess(user: User, companyId: number, allowInactive = false) {
   if (isDesignMode && companyId === designCompany.id && user.role === "admin") {
     return { company: designCompany, role: "platform_admin" as const };
   }
@@ -57,6 +57,8 @@ async function getCompanyAccess(user: User, companyId: number) {
 
   if (!company) return null;
   if (user.role === "admin") return { company, role: "platform_admin" as const };
+  // Super-admin suspension and cancellation must immediately revoke tenant API access.
+  if (!allowInactive && (company.status === "suspended" || company.status === "cancelled")) return null;
   if (company.ownerUserId === user.id) return { company, role: "owner" as const };
 
   const [membership] = await getDb()
@@ -95,6 +97,21 @@ export async function assertCompanyManagementAccess(user: User, companyId: numbe
   if (!access) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Entreprise introuvable" });
   }
+  if (access.role !== "platform_admin" && access.role !== "owner" && access.role !== "admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Droits de gestion insuffisants" });
+  }
+  return access;
+}
+
+export async function assertCompanyBillingAccess(user: User, companyId: number) {
+  const access = await getCompanyAccess(user, companyId, true);
+  if (!access) throw new TRPCError({ code: "NOT_FOUND", message: "Entreprise introuvable" });
+  return access.company;
+}
+
+export async function assertCompanyBillingManagementAccess(user: User, companyId: number) {
+  const access = await getCompanyAccess(user, companyId, true);
+  if (!access) throw new TRPCError({ code: "NOT_FOUND", message: "Entreprise introuvable" });
   if (access.role !== "platform_admin" && access.role !== "owner" && access.role !== "admin") {
     throw new TRPCError({ code: "FORBIDDEN", message: "Droits de gestion insuffisants" });
   }

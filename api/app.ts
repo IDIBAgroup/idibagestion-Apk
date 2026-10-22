@@ -7,6 +7,11 @@ import { appRouter } from "./router";
 import { createContext } from "./context";
 import { createPaymentWebhookHandler } from "./payments/webhook";
 import { googleAuthApp } from "./google-auth";
+import { registerPaymentGateway } from "./payments/gateway";
+import { CinetPayGateway, getCinetPayConfigFromEnv } from "./payments/cinetpay";
+
+const cinetPayConfig = getCinetPayConfigFromEnv();
+if (cinetPayConfig) registerPaymentGateway(new CinetPayGateway(cinetPayConfig));
 
 const app = new Hono<{ Bindings: HttpBindings }>();
 
@@ -29,6 +34,7 @@ app.get("/api/auth/cleanup-legacy-cookies", (c) => {
   return c.json({ success: true });
 });
 app.route("/api/auth/google", googleAuthApp);
+app.get("/api/payments/webhook", (c) => c.json({ ready: true }));
 app.post("/api/payments/webhook", createPaymentWebhookHandler());
 app.use("/api/trpc/*", async (c) => {
   return fetchRequestHandler({

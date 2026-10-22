@@ -1,17 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   FileText, Download, Globe, Building2, Calendar, Calculator,
-  ChevronRight, CheckCircle, AlertTriangle, X, Plus, Save,
+  ChevronRight, CheckCircle, AlertTriangle, X, Plus,
   TrendingUp, TrendingDown, Landmark, Receipt, Users, Package,
-  ArrowRight, FileSpreadsheet, Printer
+  ArrowRight, FileSpreadsheet
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { useBrandingStore } from '@/stores/brandingStore';
 import { getAll, addAndNotify } from '@/lib/db';
+import { registerExposePdfFont } from '@/lib/pdf-font';
 import type { DSFForm, OhadaCountry, CountryTaxConfig } from '@/types';
+import { usePlatformFinancialSettings } from '@/hooks/usePlatformFinancialSettings';
 
 // Configuration fiscale par pays OHADA
 const COUNTRY_CONFIGS: Record<OhadaCountry, CountryTaxConfig> = {
@@ -136,6 +139,16 @@ const COUNTRY_CONFIGS: Record<OhadaCountry, CountryTaxConfig> = {
     otherTaxes: [],
     socialOrgName: 'CNSS', fiscalYearEnd: '12-31', dsfDeadlineDays: 90, dsfFormCode: 'DSF-KM-01'
   },
+  GW: {
+    code: 'GW', name: 'Guinée-Bissau', vatRate: 0, isRate: 0, irppEnabled: false, irppBrackets: [],
+    cnpsEnabled: false, otherTaxes: [], socialOrgName: 'À configurer', fiscalYearEnd: '12-31',
+    dsfDeadlineDays: 0, dsfFormCode: 'À configurer', configurationStatus: 'needs_setup',
+  },
+  GQ: {
+    code: 'GQ', name: 'Guinée équatoriale', vatRate: 0, isRate: 0, irppEnabled: false, irppBrackets: [],
+    cnpsEnabled: false, otherTaxes: [], socialOrgName: 'À configurer', fiscalYearEnd: '12-31',
+    dsfDeadlineDays: 0, dsfFormCode: 'À configurer', configurationStatus: 'needs_setup',
+  },
 };
 
 const STEPS = [
@@ -151,6 +164,7 @@ const STEPS = [
 export function DSFPage() {
   const { setCurrentPageTitle, showToast } = useUIStore();
   const { companyName } = useBrandingStore();
+  const financialSettings = usePlatformFinancialSettings();
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedCountry, setSelectedCountry] = useState<OhadaCountry>('CM');
   const [fiscalYear, setFiscalYear] = useState(2024);
@@ -178,7 +192,28 @@ export function DSFPage() {
 
   useEffect(() => { setCurrentPageTitle('DSF OHADA - Declaration Statistique et Fiscale'); }, [setCurrentPageTitle]);
 
-  const countryConfig = COUNTRY_CONFIGS[selectedCountry];
+  useEffect(() => {
+    if (COUNTRY_CONFIGS[financialSettings.countryCode as OhadaCountry]) {
+      setSelectedCountry(financialSettings.countryCode as OhadaCountry);
+    }
+  }, [financialSettings.countryCode]);
+
+  const baseCountryConfig = COUNTRY_CONFIGS[selectedCountry];
+  const companyRuleRate = (taxType: string) => financialSettings.taxRules.find((rule) =>
+    rule.isActive && rule.countryCode === selectedCountry && rule.taxType === taxType &&
+    rule.effectiveFrom <= financialSettings.currentDate &&
+    (!rule.effectiveTo || rule.effectiveTo >= financialSettings.currentDate),
+  )?.rateBasisPoints;
+  const countryConfig = {
+    ...baseCountryConfig,
+    vatRate: companyRuleRate('vat') === undefined ? baseCountryConfig.vatRate : companyRuleRate('vat')! / 100,
+    isRate: companyRuleRate('corporate_income') === undefined ? baseCountryConfig.isRate : companyRuleRate('corporate_income')! / 100,
+    cnpsRates: baseCountryConfig.cnpsRates ? {
+      ...baseCountryConfig.cnpsRates,
+      pensionEmployee: companyRuleRate('employee_social') === undefined ? baseCountryConfig.cnpsRates.pensionEmployee : companyRuleRate('employee_social')! / 100,
+      pensionEmployer: companyRuleRate('employer_social') === undefined ? baseCountryConfig.cnpsRates.pensionEmployer : companyRuleRate('employer_social')! / 100,
+    } : baseCountryConfig.cnpsRates,
+  };
   const existingDSFs = getAll('dsfs') as DSFForm[];
 
   // Load accounting data for pre-fill
@@ -187,7 +222,7 @@ export function DSFPage() {
   const invoices = getAll('invoices');
   const payroll = getAll('payroll');
 
-  const formatXAF = (a: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XAF', minimumFractionDigits: 0 }).format(a);
+  const formatXAF = (a: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: financialSettings.currency, minimumFractionDigits: 0 }).format(a);
 
   // Auto-calculate from accounting entries when country changes
   useEffect(() => {
@@ -244,14 +279,20 @@ export function DSFPage() {
     return { valeurAjoutee: va, excedentBrutExploitation: ebe, resultatExploitation: re, resultatFinancier: rf, resultatOrdinaire: ro, resultatExtraordinaire: 0, resultatNetComptable: resultatData.resultatNet };
   }, [resultatData]);
 
-  const handleGenerateDSF = () => {
+  const handleGenerateDSF = async () => {
+    if (countryConfig.configurationStatus === 'needs_setup') {
+      showToast(`Le profil fiscal de ${countryConfig.name} doit être configuré et validé avant de générer une DSF.`, 'error');
+      return;
+    }
+    const periodStart = `${fiscalYear}-${String(financialSettings.fiscalYearStartMonth).padStart(2, '0')}-${String(financialSettings.fiscalYearStartDay).padStart(2, '0')}`;
+    const periodEnd = new Date(Date.UTC(fiscalYear + 1, financialSettings.fiscalYearStartMonth - 1, financialSettings.fiscalYearStartDay) - 86_400_000).toISOString().slice(0, 10);
     const dsf: DSFForm = {
       id: `dsf-${Date.now()}`,
       companyId: 'comp-1',
       countryCode: selectedCountry,
       fiscalYear,
-      periodStart: `${fiscalYear}-01-01`,
-      periodEnd: `${fiscalYear}-12-31`,
+      periodStart,
+      periodEnd,
       generatedAt: new Date().toISOString(),
       status: 'generated',
       tableauA: bilanData,
@@ -263,8 +304,9 @@ export function DSFPage() {
     };
     addAndNotify('dsfs', dsf);
     setDsfForms(prev => [...prev, dsf]);
-    showToast(`DSF ${countryConfig.dsfFormCode} generee avec succes`, 'success');
     setCurrentStep(6);
+    showToast(`DSF ${countryConfig.dsfFormCode} enregistrée. Préparation du PDF…`, 'success');
+    await handleExportPDF(dsf);
   };
 
   const handleExportCSV = (dsf: DSFForm) => {
@@ -313,6 +355,139 @@ export function DSFPage() {
     showToast('DSF exportee en CSV', 'success');
   };
 
+  const handleExportPDF = async (dsf: DSFForm) => {
+    const config = COUNTRY_CONFIGS[dsf.countryCode];
+    if (!config) {
+      showToast('Configuration du pays introuvable pour cette DSF.', 'error');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+      await registerExposePdfFont(doc);
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const formatAmount = (value?: number) => `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value ?? 0)} FCFA`;
+      const row = (label: string, value?: number): [string, string] => [label, formatAmount(value)];
+      let currentY = 66;
+
+      const addTable = (title: string, rows: [string, string][], total?: [string, string]) => {
+        autoTable(doc, {
+          startY: currentY,
+          margin: { left: 14, right: 14, top: 41, bottom: 19 },
+          head: [[title, 'Montant (FCFA)']],
+          body: rows,
+          foot: total ? [total] : undefined,
+          theme: 'striped',
+          styles: { font: 'Expose', fontSize: 8, cellPadding: 2.5, textColor: [34, 49, 61], lineColor: [225, 232, 237], lineWidth: 0.15 },
+          headStyles: { font: 'Expose', fillColor: [8, 28, 45], textColor: [255, 255, 255], fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [242, 248, 246] },
+          footStyles: { font: 'Expose', fillColor: [31, 122, 99], textColor: [255, 255, 255], fontStyle: 'bold' },
+          columnStyles: { 0: { cellWidth: 127 }, 1: { cellWidth: 55, halign: 'right' } },
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 6;
+      };
+
+      const actif = dsf.tableauA;
+      const totalActif = (actif?.immobilisations ?? 0) + (actif?.stocks ?? 0) + (actif?.creances ?? 0) + (actif?.tresorerie ?? 0);
+      const totalPassif = (actif?.capitauxPropres ?? 0) + (actif?.dettesFinancieres ?? 0) + (actif?.dettesExploitation ?? 0) + (actif?.autresDettes ?? 0);
+      addTable('TABLEAU A · ACTIF', [
+        row('Immobilisations', actif?.immobilisations), row('Stocks', actif?.stocks),
+        row('Créances', actif?.creances), row('Trésorerie', actif?.tresorerie),
+      ], row('TOTAL ACTIF', totalActif));
+      addTable('TABLEAU A · PASSIF', [
+        row('Capitaux propres', actif?.capitauxPropres), row('Dettes financières', actif?.dettesFinancieres),
+        row('Dettes d’exploitation', actif?.dettesExploitation), row('Autres dettes', actif?.autresDettes),
+      ], row('TOTAL PASSIF', totalPassif));
+
+      const resultat = dsf.tableauB;
+      addTable('TABLEAU B · COMPTE DE RÉSULTAT', [
+        row('Chiffre d’affaires', resultat?.chiffreAffaires), row('Production vendue', resultat?.productionVendue),
+        row('Production immobilisée', resultat?.productionImmobilisee), row('Achats consommés', resultat?.achatsConsommes),
+        row('Charges de personnel', resultat?.chargesPersonnel), row('Dotations aux amortissements', resultat?.dotationsAmortissements),
+        row('Autres charges', resultat?.autresCharges), row('Produits financiers', resultat?.produitsFinanciers),
+        row('Charges financières', resultat?.chargesFinancieres),
+      ], row('RÉSULTAT NET', resultat?.resultatNet));
+
+      const esg = dsf.tableauC;
+      addTable('TABLEAU C · SOLDES DE GESTION', [
+        row('Valeur ajoutée', esg?.valeurAjoutee), row('Excédent brut d’exploitation', esg?.excedentBrutExploitation),
+        row('Résultat d’exploitation', esg?.resultatExploitation), row('Résultat financier', esg?.resultatFinancier),
+        row('Résultat ordinaire', esg?.resultatOrdinaire), row('Résultat extraordinaire', esg?.resultatExtraordinaire),
+        row('Résultat net comptable', esg?.resultatNetComptable),
+      ]);
+
+      const fiscal = dsf.tableauD;
+      addTable(`TABLEAU D · FISCALITÉ (${config.name.toUpperCase()})`, [
+        row('TVA collectée', fiscal?.tvaCollectee), row('TVA déductible', fiscal?.tvaDeductible),
+        row('TVA nette', fiscal?.tvaNette), row('IRPP retenu', fiscal?.irppRetenue),
+        row('Impôt sur les sociétés dû', fiscal?.isDu), row('Impôt sur les sociétés payé', fiscal?.isPaye),
+        row('Crédit d’impôt reportable', fiscal?.isReportable), row(`Cotisations ${config.socialOrgName}`, fiscal?.cotisationsSociales),
+        row('Taxes diverses', fiscal?.taxesDiverses),
+      ]);
+
+      addTable('ANNEXES · DONNÉES SOCIALES ET COMMERCIALES', [
+        row('Effectif moyen', dsf.effectifMoyen), row('Masse salariale annuelle', dsf.masseSalariale),
+        row('Investissements réalisés', dsf.investissements), row('Exportations', dsf.exportations),
+        row('Importations', dsf.importations),
+      ]);
+
+      const pageCount = doc.getNumberOfPages();
+      const generatedAt = new Date(dsf.generatedAt).toLocaleDateString('fr-FR');
+      for (let page = 1; page <= pageCount; page += 1) {
+        doc.setPage(page);
+        doc.setFillColor(8, 28, 45);
+        doc.rect(0, 0, pageWidth, 35, 'F');
+        doc.setFillColor(31, 180, 114);
+        doc.rect(14, 33, pageWidth - 28, 1.5, 'F');
+        doc.setFont('Expose', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(166, 231, 203);
+        doc.text(`${companyName.toUpperCase()}  ·  DOCUMENT FINANCIER`, 14, 10);
+        doc.setFontSize(16);
+        doc.setTextColor(255, 255, 255);
+        doc.text('DÉCLARATION STATISTIQUE ET FISCALE', 14, 21);
+        doc.setFont('Expose', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(218, 229, 236);
+        doc.text(`${config.dsfFormCode}  ·  ${config.name}  ·  Exercice ${dsf.fiscalYear}`, 14, 29);
+        doc.text(`Émise le ${generatedAt}`, pageWidth - 14, 29, { align: 'right' });
+
+        if (page === 1) {
+          doc.setFillColor(242, 248, 246);
+          doc.roundedRect(14, 40, pageWidth - 28, 19, 2, 2, 'F');
+          doc.setFont('Expose', 'normal');
+          doc.setFontSize(7);
+          doc.setTextColor(100, 116, 128);
+          doc.text('ENTREPRISE', 19, 47);
+          doc.text('EXERCICE FISCAL', 83, 47);
+          doc.text('PÉRIODE', 145, 47);
+          doc.setFont('Expose', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(8, 28, 45);
+          doc.text(companyName, 19, 54, { maxWidth: 58 });
+          doc.text(String(dsf.fiscalYear), 83, 54);
+          doc.text(`${dsf.periodStart} — ${dsf.periodEnd}`, 145, 54, { maxWidth: 48 });
+        }
+
+        doc.setDrawColor(221, 230, 235);
+        doc.line(14, pageHeight - 13, pageWidth - 14, pageHeight - 13);
+        doc.setFont('Expose', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 128);
+        doc.text('IDIBAGES  ·  Document de gestion', 14, pageHeight - 7);
+        doc.text(`Page ${page}/${pageCount}`, pageWidth - 14, pageHeight - 7, { align: 'right' });
+      }
+
+      const safeCompany = companyName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9-]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'entreprise';
+      doc.save(`dsf-${config.code}-${dsf.fiscalYear}-${safeCompany}.pdf`);
+      showToast('La DSF a été téléchargée en PDF.', 'success');
+    } catch (error) {
+      console.error('DSF PDF generation failed', error);
+      showToast('La DSF est enregistrée, mais la création du PDF a échoué.', 'error');
+    }
+  };
+
   const StepIcon = STEPS[currentStep].icon;
 
   return (
@@ -355,7 +530,10 @@ export function DSFPage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <StatusBadge status={dsf.status} label={dsf.status === 'submitted' ? 'Soumise' : 'Brouillon'} />
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${dsf.status === 'submitted' ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]'}`}>
+                              {dsf.status === 'submitted' ? 'Soumise' : 'Brouillon'}
+                            </span>
+                            <button onClick={() => void handleExportPDF(dsf)} className="p-1.5 rounded hover:bg-white/5 text-[var(--text-muted)]" title="Télécharger la DSF en PDF" aria-label={`Télécharger la DSF ${cfg.dsfFormCode} en PDF`}><Download size={13} /></button>
                             <button onClick={() => handleExportCSV(dsf)} className="p-1.5 rounded hover:bg-white/5 text-[var(--text-muted)]" title="Exporter CSV"><FileSpreadsheet size={12} /></button>
                           </div>
                         </div>
@@ -415,6 +593,10 @@ export function DSFPage() {
 
                   {/* Country Tax Summary */}
                   <div className="glass-card-compact p-4 bg-gradient-to-r from-[var(--accent-primary)]/5 to-[var(--accent-primary-hover)]/5">
+                    <div role="note" className="mb-3 flex gap-2 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-5 text-amber-700 dark:text-amber-200">
+                      <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                      <p>Vérifiez les taux, cotisations et échéances de ce pays et de cet exercice auprès des sources officielles ou de votre conseil local. La réglementation varie et peut changer ; ce récapitulatif ne vaut pas validation fiscale.</p>
+                    </div>
                     <h4 className="text-xs font-semibold text-[var(--text-primary)] mb-3">Regime fiscal — {countryConfig.name}</h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       <div className="p-2 rounded bg-[var(--bg-elevated)]"><p className="text-[10px] text-[var(--text-muted)]">TVA</p><p className="text-sm font-bold text-[var(--text-primary)]">{countryConfig.vatRate}%</p></div>
@@ -741,8 +923,8 @@ export function DSFPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-3">
-                    <button onClick={handleGenerateDSF} className="btn-primary h-10 gap-2">
-                      <Save size={14} /> Generer et sauvegarder la DSF
+                    <button onClick={() => void handleGenerateDSF()} className="btn-primary h-10 gap-2">
+                      <Download size={14} /> Générer, sauvegarder et télécharger la DSF en PDF
                     </button>
                     <button onClick={() => setCurrentStep(0)} className="btn-ghost h-10">
                       Recommencer

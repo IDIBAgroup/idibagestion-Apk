@@ -8,6 +8,7 @@ export interface PaymentStartRequest {
   phone?: string;
   customerEmail?: string;
   callbackUrl: string;
+  returnUrl?: string;
 }
 
 export interface VerifiedPaymentEvent {

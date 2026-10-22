@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, X, Calendar, User, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Search, Plus, X, CheckCircle2, XCircle } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
-import { getAll } from '@/lib/db';
+import { addAndNotify, getAll, subscribe } from '@/lib/db';
+import type { Employee, Leave } from '@/types';
 
 const LEAVE_TYPES: Record<string, { label: string; color: string }> = {
   annual: { label: 'Congé annuel', color: '#2DD4A8' },
@@ -17,23 +18,54 @@ const LEAVE_TYPES: Record<string, { label: string; color: string }> = {
 
 export function LeavesPage() {
   const { setCurrentPageTitle, showToast } = useUIStore();
+  const employees = getAll('employees');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showDrawer, setShowDrawer] = useState(false);
+  const [leaves, setLeaves] = useState(() => getAll('leaves'));
+  const [leaveDraft, setLeaveDraft] = useState({ employeeId: employees[0]?.id ?? '', type: 'annual' as Leave['type'], startDate: '', endDate: '', reason: '' });
 
   useEffect(() => { setCurrentPageTitle('Gestion des Congés'); }, [setCurrentPageTitle]);
 
-  const leaves = getAll('leaves');
-  const employees = getAll('employees');
+  useEffect(() => subscribe('leaves', () => setLeaves([...getAll('leaves')])), []);
 
-  const filtered = leaves.filter((l: any) => {
+  const submitLeaveRequest = () => {
+    const employee = employees.find((item: Employee) => item.id === leaveDraft.employeeId);
+    if (!employee || !leaveDraft.startDate || !leaveDraft.endDate || !leaveDraft.reason.trim()) {
+      showToast('Renseignez l’employé, les dates et le motif.', 'error');
+      return;
+    }
+    const start = new Date(`${leaveDraft.startDate}T00:00:00`);
+    const end = new Date(`${leaveDraft.endDate}T00:00:00`);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end < start) {
+      showToast('La date de fin doit être égale ou postérieure à la date de début.', 'error');
+      return;
+    }
+    const days = Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
+    addAndNotify('leaves', {
+      id: `leave-${crypto.randomUUID()}`,
+      employeeId: String(employee.id),
+      employeeName: employee.fullName,
+      type: leaveDraft.type,
+      startDate: leaveDraft.startDate,
+      endDate: leaveDraft.endDate,
+      days,
+      reason: leaveDraft.reason.trim(),
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    });
+    setShowDrawer(false);
+    showToast('Demande soumise et enregistrée.', 'success');
+  };
+
+  const filtered = leaves.filter((l: Leave) => {
     const m = l.employeeName.toLowerCase().includes(search.toLowerCase());
     return m && (statusFilter === 'all' || l.status === statusFilter);
   });
 
   const stats = {
-    approved: leaves.filter((l: any) => l.status === 'approved').reduce((s: number, l: any) => s + l.days, 0),
-    pending: leaves.filter((l: any) => l.status === 'pending').reduce((s: number, l: any) => s + l.days, 0),
+    approved: leaves.filter((l: Leave) => l.status === 'approved').reduce((s: number, l: Leave) => s + l.days, 0),
+    pending: leaves.filter((l: Leave) => l.status === 'pending').reduce((s: number, l: Leave) => s + l.days, 0),
     totalRequests: leaves.length,
   };
 
@@ -79,7 +111,7 @@ export function LeavesPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((l: any, i: number) => (
+              {filtered.map((l: Leave, i: number) => (
                 <motion.tr key={l.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
                   className="border-b border-[var(--divider)] hover:bg-white/[0.02] transition-colors">
                   <td className="px-4 py-3"><div className="flex items-center gap-2"><div className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-primary-hover)] flex items-center justify-center text-white text-[10px] font-bold">{l.employeeName.charAt(0)}</div><span className="text-sm text-[var(--text-primary)]">{l.employeeName}</span></div></td>
@@ -114,16 +146,16 @@ export function LeavesPage() {
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6"><h2 className="text-lg font-semibold text-[var(--text-primary)]">Nouvelle Demande</h2><button onClick={() => setShowDrawer(false)} className="p-2 rounded-lg hover:bg-white/5"><X size={18} className="text-[var(--text-muted)]" /></button></div>
                 <div className="space-y-4">
-                  <div><label className="block text-sm text-[var(--text-secondary)] mb-1.5">Employé</label><select className="w-full h-10 px-3 glass-input text-sm">{employees.map((e: any) => <option key={e.id} value={e.id}>{e.fullName}</option>)}</select></div>
-                  <div><label className="block text-sm text-[var(--text-secondary)] mb-1.5">Type</label><select className="w-full h-10 px-3 glass-input text-sm">{Object.entries(LEAVE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
+                  <div><label className="block text-sm text-[var(--text-secondary)] mb-1.5">Employé</label><select id="leave-employee" required value={leaveDraft.employeeId} onChange={event => setLeaveDraft({ ...leaveDraft, employeeId: event.target.value })} className="w-full h-10 px-3 glass-input text-sm">{employees.map((e: Employee) => <option key={e.id} value={e.id}>{e.fullName}</option>)}</select></div>
+                  <div><label className="block text-sm text-[var(--text-secondary)] mb-1.5">Type</label><select id="leave-type" value={leaveDraft.type} onChange={event => setLeaveDraft({ ...leaveDraft, type: event.target.value as Leave['type'] })} className="w-full h-10 px-3 glass-input text-sm">{Object.entries(LEAVE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div><label className="block text-sm text-[var(--text-secondary)] mb-1.5">Du</label><input type="date" className="w-full h-10 px-3 glass-input text-sm" /></div>
-                    <div><label className="block text-sm text-[var(--text-secondary)] mb-1.5">Au</label><input type="date" className="w-full h-10 px-3 glass-input text-sm" /></div>
+                    <div><label className="block text-sm text-[var(--text-secondary)] mb-1.5">Du</label><input id="leave-start" required type="date" value={leaveDraft.startDate} onChange={event => setLeaveDraft({ ...leaveDraft, startDate: event.target.value })} className="w-full h-10 px-3 glass-input text-sm" /></div>
+                    <div><label className="block text-sm text-[var(--text-secondary)] mb-1.5">Au</label><input id="leave-end" required type="date" value={leaveDraft.endDate} onChange={event => setLeaveDraft({ ...leaveDraft, endDate: event.target.value })} className="w-full h-10 px-3 glass-input text-sm" /></div>
                   </div>
-                  <div><label className="block text-sm text-[var(--text-secondary)] mb-1.5">Motif</label><textarea className="w-full h-20 p-3 glass-input text-sm resize-none" /></div>
+                  <div><label className="block text-sm text-[var(--text-secondary)] mb-1.5">Motif</label><textarea id="leave-reason" required maxLength={1000} value={leaveDraft.reason} onChange={event => setLeaveDraft({ ...leaveDraft, reason: event.target.value })} placeholder="Expliquez le motif de la demande…" className="w-full h-24 p-3 glass-input text-sm resize-y" /></div>
                   <div className="flex gap-3 pt-2">
                     <button onClick={() => setShowDrawer(false)} className="flex-1 btn-ghost h-10 justify-center">Annuler</button>
-                    <button onClick={() => { showToast('Demande soumise', 'success'); setShowDrawer(false); }} className="flex-1 btn-primary h-10 justify-center">Soumettre</button>
+                    <button type="button" onClick={submitLeaveRequest} disabled={!employees.length} className="flex-1 btn-primary h-10 justify-center disabled:opacity-50">Soumettre</button>
                   </div>
                 </div>
               </div>

@@ -11,7 +11,6 @@ import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell, FunnelChart, Funnel as ReFunnel, LabelList,
 } from 'recharts';
 import { GlassCard } from '@/components/shared/GlassCard';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { getAll } from '@/lib/db';
 import { useNavigate } from '@/lib/navigation';
@@ -343,7 +342,9 @@ export function VibeDashboardPage() {
                     </div>
                     <p className="text-[10px] text-[var(--text-muted)] truncate">{msg.subject || msg.body.slice(0, 60)}...</p>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <StatusBadge status={msg.status} />
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded ${msg.status === 'replied' ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : msg.status === 'opened' ? 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]' : 'bg-[var(--bg-card)] text-[var(--text-muted)]'}`}>
+                        {msg.status}
+                      </span>
                       {msg.aiGenerated && <span className="text-[9px] bg-[var(--accent-purple)]/10 text-[var(--accent-purple)] px-1.5 py-0.5 rounded">IA</span>}
                     </div>
                   </div>

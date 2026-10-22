@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BookOpen, Upload, Search, X, FileText, Image, FileSpreadsheet,
+  BookOpen, Upload, Search, X, FileText, Image, FileSpreadsheet, Camera,
   Presentation, FileCode, Download, Trash2, Eye, Plus, Filter,
   Lock, Unlock, Tag, User, Calendar, ChevronDown, File, Archive,
   GraduationCap, ShieldCheck, ClipboardList, HelpCircle, Sparkles,
@@ -259,12 +259,13 @@ export function LibraryPage() {
                 <div className="space-y-3">
                   {/* File Drop Zone */}
                   <div className="border-2 border-dashed border-[var(--divider)] rounded-xl p-6 text-center hover:border-[var(--accent-primary)]/30 transition-colors">
-                    <input type="file" onChange={handleFileSelect} className="hidden" id="lib-file-input" />
+                    <input type="file" onChange={(event) => { handleFileSelect(event); event.currentTarget.value = ''; }} className="hidden" id="lib-file-input" />
                     <label htmlFor="lib-file-input" className="cursor-pointer">
                       <Upload size={24} className="mx-auto mb-2 text-[var(--accent-primary)]" />
                       <p className="text-xs text-[var(--text-primary)] font-medium">{selectedFile ? selectedFile.name : 'Cliquez pour selectionner un fichier'}</p>
                       <p className="text-[10px] text-[var(--text-muted)] mt-1">{selectedFile ? formatFileSize(selectedFile.size) : 'PDF, DOC, XLS, PPT, JPG, PNG (max 10 Mo)'}</p>
                     </label>
+                    <div className="mt-3"><input type="file" accept="image/*" capture="environment" onChange={(event) => { handleFileSelect(event); event.currentTarget.value = ''; }} className="hidden" id="lib-scan-input" /><label htmlFor="lib-scan-input" className="btn-secondary mx-auto h-9 w-fit cursor-pointer"><Camera size={14} /> Scanner un document</label><p className="mt-1 text-[10px] text-[var(--text-muted)]">Pour un scanner relié à l’ordinateur, lancez son logiciel, enregistrez le scan en PDF, puis choisissez ce PDF dans la zone ci-dessus.</p></div>
                   </div>
 
                   <div><label className="block text-xs text-[var(--text-secondary)] mb-1">Titre</label>

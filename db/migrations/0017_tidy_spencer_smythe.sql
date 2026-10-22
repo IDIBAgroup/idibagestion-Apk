@@ -1,0 +1,1 @@
+ALTER TABLE `sales_document_sequences` MODIFY COLUMN `kind` enum('quote','order','delivery') NOT NULL;

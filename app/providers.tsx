@@ -3,7 +3,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { TRPCProvider } from '@/providers/trpc';
 import { installLiveTranslation } from '@/lib/liveTranslation';
-import { PwaSupport } from '@/components/pwa/PwaSupport';
 
 export function Providers({ children }: { children: ReactNode }) {
   useEffect(() => {
@@ -21,5 +20,5 @@ export function Providers({ children }: { children: ReactNode }) {
 
   useEffect(() => installLiveTranslation(), []);
 
-  return <TRPCProvider>{children}<PwaSupport /></TRPCProvider>;
+  return <TRPCProvider>{children}</TRPCProvider>;
 }

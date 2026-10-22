@@ -1,6 +1,6 @@
 # Module 07 — Finance & accounting (OHADA)
 
-**Status:** Not started (local only)  
+**Status:** In progress — tenant-scoped persistence is implemented for expenses, fixed assets, manual journal postings and saved report snapshots; production migrations remain unapplied.  
 **Reference docs:** [architecture cible](../architecture/architecture-cible-saas.md) · [implementation index](README.md)
 
 ## 1. Scope
@@ -24,13 +24,17 @@ Main files:
 
 ## 2. Current state
 
-- Local collections: `accountingEntries`, `chartAccounts`, `financialReports`, `closingEntries`, `dsfs`, `assets`, `expenses`.
+- Server-backed: `expenses`, `fixed_assets`, `journal_entries`, `journal_entry_lines`, `financial_reports`, `fiscal_periods`.
+- Still local or incomplete: `chartAccounts` is a static client-side SYSCOHADA catalogue; `closingEntries` and `dsfs` still use local collections.
 - `DSFPage` also reads `employees`, `payroll`, `invoices` (cross-module reads that will need server queries).
-- Seed contains a demo chart of accounts, not a validated OHADA plan.
+- The accounting page posts balanced two-line entries atomically, validates detail account codes, stores transaction/base currencies, reads sales invoices through the server API, and exposes a server-calculated general trial balance and paginated account ledger.
+- Saved report snapshots use the company's configured fiscal-year start date. Current calculations remain preliminary and are not validated statutory statements.
+- The submitted SYSCOHADA chart remains static and read-only; it is not yet tenant-customizable or stored in the database.
 
 ## 3. Target data model
 
-- To add: `chart_accounts`, `journals`, `journal_entries` + `journal_lines` (debit/credit, must balance), `fiscal_periods` (open/closed), `expenses` + `expense_attachments`, `fixed_assets` + `depreciation_schedule`, `dsf_forms`.
+- Added: `journal_entries` + `journal_entry_lines` (debit/credit), `financial_reports`, `expense_claims`, `fixed_assets`.
+- Still to add: tenant-specific `chart_accounts`, configurable `journals`, expense attachment lifecycle, `depreciation_schedule`, and `dsf_forms`.
 
 ## 4. API (tRPC)
 
@@ -43,12 +47,13 @@ Main files:
 
 ## 5. Implementation steps
 
-1. [ ] Start with `expenses` and `assets` (self-contained), then chart of accounts and journal.
-2. [ ] Enforce balanced entries and period locks in the API, inside a DB transaction.
-3. [ ] Generate entries automatically from issued invoices (06) and payroll (09) through events.
-4. [ ] Closing and DSF last: they only read finished data.
-5. [ ] File attachments for expenses need object storage (see module 10).
-6. [ ] Export to CSV/PDF for accountants.
+1. [x] Tenant-scoped persistent flows for expenses and fixed assets; journal and report tables are generated.
+2. [x] Manual journal postings are balanced and atomic; closed fiscal periods block new postings and overlapping periods cannot be closed.
+3. [x] Add tenant-scoped account-level ledger and trial-balance queries.
+4. [ ] Generate entries automatically from issued invoices (06) and payroll (09) through events.
+5. [ ] Closing and DSF last: they only read finished data.
+6. [ ] File attachments for expenses need object storage (see module 10).
+7. [ ] Export to CSV/PDF for accountants.
 
 ## 6. Depends on
 
@@ -58,8 +63,8 @@ Main files:
 
 ## 7. Acceptance criteria
 
-- [ ] Trial balance always balances.
-- [ ] Closed periods reject new entries.
+- [x] Every new manual two-line posting is balanced atomically by construction; a historical-integrity check for legacy imports remains outstanding.
+- [x] Closed periods reject new entries; close and reopen actions are tenant-scoped, permission-checked, and serialized with journal posting.
 - [ ] Every manual change is audited.
 
 ## 8. Risks & notes
@@ -68,8 +73,9 @@ Main files:
 
 ## 9. Definition of done
 
-- [ ] Tables + migration reviewed (`npm run db:generate`, `npm run db:check`)
-- [ ] Router with company scoping and permission checks, default deny
-- [ ] Page reads/writes through `trpc.*`; no import of `@/lib/db` for this module's collections
+- [x] Additive tables and migration generated; `db:check` passes. Apply migrations 0026 and 0027 to the deployed database before enabling journal posting and period controls there; neither migration has been applied to production from this workspace.
+- [x] Journal, expense, and asset APIs check company scope, subscription feature, and management role.
+- [x] Accounting page reads and writes through `trpc.*`; no `@/lib/db` access remains for its journal or reports.
 - [ ] Demo seed for this module removed from `data/seed.ts`
-- [ ] Vitest tests for the router; `npm run check`, `npm run lint`, `npm run build` pass
+- [ ] Router-level database tests, `npm run lint`, production migration application, and broader OHADA statement validation remain.
+- [x] Pure journal/fiscal-period tests (17 targeted tests), `npm run check`, and `npm run db:check` pass. `npm run build` passed before the fiscal-period lock changes and must be rerun before deployment.

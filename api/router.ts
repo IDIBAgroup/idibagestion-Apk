@@ -4,6 +4,12 @@ import { partnerRouter } from "./partner-router";
 import { clientRouter, productRouter } from "./commercial-router";
 import { paymentRouter } from "./payment-router";
 import { documentRouter } from "./document-router";
+import { salesDocumentRouter } from "./sales-document-router";
+import { invoiceReminderRouter } from "./invoice-reminder-router";
+import { assetRouter } from "./asset-router";
+import { expenseRouter } from "./expense-router";
+import { departmentRouter } from "./department-router";
+import { accountingRouter } from "./accounting-router";
 import { createRouter, publicQuery } from "./middleware";
 
 export const appRouter = createRouter({
@@ -19,6 +25,12 @@ export const appRouter = createRouter({
   customer: clientRouter,
   product: productRouter,
   document: documentRouter,
+  salesDocument: salesDocumentRouter,
+  invoiceReminder: invoiceReminderRouter,
+  asset: assetRouter,
+  expense: expenseRouter,
+  department: departmentRouter,
+  accounting: accountingRouter,
 });
 
 export type AppRouter = typeof appRouter;

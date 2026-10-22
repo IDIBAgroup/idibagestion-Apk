@@ -113,8 +113,7 @@
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    min-width: 320px;
-    overflow-x: hidden;
+    min-width: 360px;
   }
 
   h1, h2, h3, h4, h5, h6 {

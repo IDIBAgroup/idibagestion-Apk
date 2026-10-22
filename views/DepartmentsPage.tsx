@@ -1,336 +1,177 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Building2, UserCheck, Plus, X, Trash2, Eye, Mail, Phone, Users, Briefcase, Edit3, UserPlus, Check } from 'lucide-react';
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Building2, Edit3, Eye, Plus, Trash2, UserCheck, UserPlus, Users, X } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { useActiveCompany } from '@/hooks/useActiveCompany';
+import { trpc } from '@/providers/trpc';
 import { useUIStore } from '@/stores/uiStore';
-import { getAll, addAndNotify, updateAndNotify, removeAndNotify } from '@/lib/db';
+
+type Person = { id: number; name: string; email: string | null; role: string };
+type Department = {
+  id: number;
+  companyId: number;
+  name: string;
+  managerId: number | null;
+  managerName: string | null;
+  managerEmail: string | null;
+  members: Person[];
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export function DepartmentsPage() {
+  const { companyId } = useActiveCompany();
   const { setCurrentPageTitle, showToast } = useUIStore();
-  const [showDrawer, setShowDrawer] = useState(false);
-  const [selectedDept, setSelectedDept] = useState<any>(null);
-  const [editingDept, setEditingDept] = useState<any>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showAddEmpModal, setShowAddEmpModal] = useState(false);
-  const [selectedEmpToAssign, setSelectedEmpToAssign] = useState('');
-  const [newDept, setNewDept] = useState({ name: '', managerId: '' });
+  const utils = trpc.useUtils();
+  const directoryQuery = trpc.department.directory.useQuery({ companyId: companyId ?? 0 }, { enabled: Boolean(companyId) });
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
+  const [departmentName, setDepartmentName] = useState('');
+  const [managerId, setManagerId] = useState('');
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
+  const [selectedPersonId, setSelectedPersonId] = useState('');
+
+  const departments = directoryQuery.data?.departments as Department[] | undefined;
+  const people = directoryQuery.data?.people ?? [];
+  const selectedDepartment = departments?.find(({ id }) => id === selectedDepartmentId) ?? null;
+  const availablePeople = useMemo(() => people.filter((person) => !selectedDepartment?.members.some((member) => member.id === person.id)), [people, selectedDepartment]);
 
   useEffect(() => { setCurrentPageTitle('Départements & Organisation'); }, [setCurrentPageTitle]);
 
-  const departments = getAll('departments');
-  const users = getAll('users');
-  const employees = getAll('employees');
-
-  const handleCreate = () => {
-    if (!newDept.name) return;
-    const mgr = users.find((u: any) => u.uid === newDept.managerId);
-    const dept = {
-      id: `dept-${Date.now()}`,
-      name: newDept.name,
-      managerId: newDept.managerId || '',
-      managerName: mgr?.displayName || '',
-      companyId: 'comp-1',
-      employeeCount: 0,
-    };
-    addAndNotify('departments', dept);
-    setShowDrawer(false);
-    setNewDept({ name: '', managerId: '' });
-    showToast('Département créé avec succès', 'success');
+  const refreshDirectory = async () => {
+    if (companyId) await utils.department.directory.invalidate({ companyId });
   };
+  const createDepartment = trpc.department.create.useMutation({
+    onSuccess: async () => { await refreshDirectory(); setDrawerOpen(false); showToast('Département créé.', 'success'); },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const updateDepartment = trpc.department.update.useMutation({
+    onSuccess: async () => { await refreshDirectory(); setDrawerOpen(false); setEditingDepartment(null); showToast('Département mis à jour.', 'success'); },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const assignPerson = trpc.department.assign.useMutation({
+    onSuccess: async () => { await refreshDirectory(); setSelectedPersonId(''); showToast('Membre affecté au département.', 'success'); },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const unassignPerson = trpc.department.unassign.useMutation({
+    onSuccess: async () => { await refreshDirectory(); showToast('Membre retiré du département.', 'success'); },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const deleteDepartment = trpc.department.delete.useMutation({
+    onSuccess: async () => { await refreshDirectory(); setSelectedDepartmentId(null); showToast('Département supprimé.', 'success'); },
+    onError: (error) => showToast(error.message, 'error'),
+  });
 
-  const handleUpdate = () => {
-    if (!editingDept || !editingDept.name) return;
-    const mgr = users.find((u: any) => u.uid === editingDept.managerId);
-    updateAndNotify('departments', editingDept.id, {
-      name: editingDept.name,
-      managerId: editingDept.managerId || '',
-      managerName: mgr?.displayName || '',
-    });
-    setShowEditModal(false);
-    if (selectedDept && selectedDept.id === editingDept.id) {
-      setSelectedDept({ ...selectedDept, name: editingDept.name, managerId: editingDept.managerId, manager: mgr });
-    }
-    showToast('Département mis à jour', 'success');
+  const openCreate = () => {
+    setEditingDepartment(null);
+    setDepartmentName('');
+    setManagerId('');
+    setDrawerOpen(true);
   };
-
-  const handleAssignEmployee = () => {
-    if (!selectedEmpToAssign || !selectedDept) return;
-    updateAndNotify('employees', selectedEmpToAssign, { departmentId: selectedDept.id });
-    const emp = employees.find((e: any) => e.id === selectedEmpToAssign);
-    if (emp) {
-      setSelectedDept((prev: any) => ({
-        ...prev,
-        deptEmployees: [...(prev.deptEmployees || []), { ...emp, departmentId: selectedDept.id }]
-      }));
-    }
-    setShowAddEmpModal(false);
-    setSelectedEmpToAssign('');
-    showToast('Employé assigné au département', 'success');
+  const openEdit = (department: Department) => {
+    setEditingDepartment(department);
+    setDepartmentName(department.name);
+    setManagerId(department.managerId == null ? '' : String(department.managerId));
+    setDrawerOpen(true);
   };
-
-  const handleDelete = (deptId: string) => {
-    if (confirm('Supprimer ce département ?')) {
-      removeAndNotify('departments', deptId);
-      if (selectedDept?.id === deptId) setSelectedDept(null);
-      showToast('Département supprimé', 'success');
+  const saveDepartment = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!companyId) return;
+    const normalizedName = departmentName.trim();
+    if (editingDepartment) {
+      updateDepartment.mutate({ companyId, departmentId: editingDepartment.id, name: normalizedName, managerId: managerId ? Number(managerId) : null });
+    } else {
+      createDepartment.mutate({ companyId, name: normalizedName, managerId: managerId ? Number(managerId) : null });
     }
   };
+  const removeDepartment = (department: Department) => {
+    if (!companyId || !window.confirm(`Supprimer le département « ${department.name} » ?`)) return;
+    deleteDepartment.mutate({ companyId, departmentId: department.id });
+  };
+
+  if (!companyId) return <div className="rounded border border-[var(--divider)] p-6 text-sm text-[var(--text-muted)]">Sélectionnez une entreprise pour afficher ses départements.</div>;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Departements</h2>
-          <span className="text-xs text-[var(--text-muted)] bg-[var(--bg-elevated)] rounded-full px-2.5 py-1">{departments.length}</span>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Départements</h2>
+          <span className="rounded-full bg-[var(--bg-elevated)] px-2.5 py-1 text-xs text-[var(--text-muted)]">{departments?.length ?? 0}</span>
         </div>
-        <button onClick={() => setShowDrawer(true)} className="btn-primary h-9"><Plus size={16} /> Nouveau</button>
+        <button type="button" onClick={openCreate} className="btn-primary h-9"><Plus size={16} /> Nouveau</button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {departments.map((dept: any, i: number) => {
-          const manager = users.find((u: any) => u.uid === dept.managerId);
-          const deptEmployees = employees.filter((e: any) => e.departmentId === dept.id);
-          const deptUsers = users.filter((u: any) => u.departmentId === dept.id);
-          return (
-            <GlassCard key={dept.id} delay={i * 0.05}>
+      {directoryQuery.isError ? (
+        <div className="rounded border border-[var(--divider)] p-8 text-center text-sm text-[var(--text-muted)]">
+          <p>{directoryQuery.error.message}</p>
+          <button type="button" onClick={() => directoryQuery.refetch()} className="mt-3 text-[var(--accent-primary)]">Réessayer</button>
+        </div>
+      ) : directoryQuery.isLoading ? (
+        <div className="rounded border border-[var(--divider)] p-8 text-center text-sm text-[var(--text-muted)]">Chargement des départements…</div>
+      ) : departments?.length ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {departments.map((department, index) => (
+            <GlassCard key={department.id} delay={index * 0.04}>
               <div className="p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[var(--accent-primary)]/10 flex items-center justify-center">
-                      <Building2 size={20} className="text-[var(--accent-primary)]" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-[var(--text-primary)]">{dept.name}</h3>
-                      <p className="text-[10px] text-[var(--text-muted)]">{deptEmployees.length} employe{deptEmployees.length !== 1 ? 's' : ''}</p>
-                    </div>
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-[var(--accent-primary)]/10"><Building2 size={20} className="text-[var(--accent-primary)]" /></div>
+                    <div className="min-w-0"><h3 className="truncate text-sm font-semibold text-[var(--text-primary)]">{department.name}</h3><p className="text-[10px] text-[var(--text-muted)]">{department.members.length} membre{department.members.length === 1 ? '' : 's'}</p></div>
                   </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => { setEditingDept({ ...dept }); setShowEditModal(true); }} className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-primary)]" title="Modifier le département"><Edit3 size={14} /></button>
-                    <button onClick={() => setSelectedDept({ ...dept, manager, deptEmployees, deptUsers })} className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-primary)]" title="Voir les détails"><Eye size={14} /></button>
-                    <button onClick={() => handleDelete(dept.id)} className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-danger)]" title="Supprimer"><Trash2 size={14} /></button>
+                  <div className="flex shrink-0 gap-1">
+                    <button type="button" onClick={() => openEdit(department)} className="rounded p-1.5 text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--accent-primary)]" title="Modifier le département"><Edit3 size={14} /></button>
+                    <button type="button" onClick={() => setSelectedDepartmentId(department.id)} className="rounded p-1.5 text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--accent-primary)]" title="Voir les détails"><Eye size={14} /></button>
+                    <button type="button" disabled={deleteDepartment.isPending} onClick={() => removeDepartment(department)} className="rounded p-1.5 text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--accent-danger)]" title="Supprimer"><Trash2 size={14} /></button>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-xs">
-                    <UserCheck size={12} className="text-[var(--accent-secondary)]" />
-                    <span className="text-[var(--text-secondary)]">Responsable:</span>
-                    <span className="text-[var(--text-primary)] font-medium">{manager?.displayName || dept.managerName || 'Non assigné'}</span>
-                  </div>
-
-                  <div className="h-px bg-[var(--divider)] my-2" />
-
-                  <div className="flex -space-x-2">
-                    {deptUsers.slice(0, 5).map((emp: any) => (
-                      <div key={emp.uid} className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-primary-hover)] flex items-center justify-center text-[10px] text-white font-medium border-2 border-[var(--bg-primary)]" title={emp.displayName}>
-                        {emp.displayName.charAt(0)}
-                      </div>
-                    ))}
-                    {deptUsers.length > 5 && (
-                      <div className="w-7 h-7 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center text-[10px] text-[var(--text-muted)] border-2 border-[var(--bg-primary)]">
-                        +{deptUsers.length - 5}
-                      </div>
-                    )}
-                  </div>
+                <div className="flex items-center gap-2 text-xs"><UserCheck size={12} className="text-[var(--accent-secondary)]" /><span className="text-[var(--text-secondary)]">Responsable :</span><span className="truncate font-medium text-[var(--text-primary)]">{department.managerName || 'Non assigné'}</span></div>
+                <div className="my-3 h-px bg-[var(--divider)]" />
+                <div className="flex -space-x-2">
+                  {department.members.slice(0, 5).map((person) => <div key={person.id} title={person.name} className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[var(--bg-primary)] bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-primary-hover)] text-[10px] font-medium text-white">{person.name.charAt(0).toLocaleUpperCase()}</div>)}
+                  {department.members.length > 5 && <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[var(--bg-primary)] bg-[var(--bg-elevated)] text-[10px] text-[var(--text-muted)]">+{department.members.length - 5}</div>}
                 </div>
               </div>
             </GlassCard>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded border border-dashed border-[var(--divider)] p-10 text-center"><Building2 className="mx-auto mb-3 text-[var(--text-muted)]" size={28} /><p className="text-sm font-medium text-[var(--text-primary)]">Aucun département configuré</p><p className="mt-1 text-xs text-[var(--text-muted)]">Créez vos départements et rattachez les membres de l’entreprise.</p></div>
+      )}
 
-      {/* Detail Modal - centered */}
       <AnimatePresence>
-        {selectedDept && (
+        {selectedDepartment && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 z-50" onClick={() => setSelectedDept(null)} />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg glass-card z-50 max-h-[85vh] overflow-y-auto">
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-lg bg-[var(--accent-primary)]/10 flex items-center justify-center">
-                      <Building2 size={24} className="text-[var(--accent-primary)]" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-semibold text-[var(--text-primary)]">{selectedDept.name}</h2>
-                      <p className="text-xs text-[var(--text-muted)]">ID: {selectedDept.id}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => { setEditingDept({ ...selectedDept }); setShowEditModal(true); }} className="p-2 rounded-lg hover:bg-white/5 text-[var(--text-primary)]"><Edit3 size={16} /></button>
-                    <button onClick={() => handleDelete(selectedDept.id)} className="p-2 rounded-lg hover:bg-white/5 text-[var(--accent-danger)]"><Trash2 size={16} /></button>
-                    <button onClick={() => setSelectedDept(null)} className="p-2 rounded-lg hover:bg-white/5"><X size={18} className="text-[var(--text-muted)]" /></button>
-                  </div>
-                </div>
-
-                {/* Manager */}
-                <div className="glass-card-compact p-3 mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-[10px] text-[var(--text-muted)] uppercase">Responsable du Département</p>
-                    <button onClick={() => { setEditingDept({ ...selectedDept }); setShowEditModal(true); }} className="text-[10px] text-[var(--accent-primary)] hover:underline flex items-center gap-1">
-                      <Edit3 size={10} /> Changer
-                    </button>
-                  </div>
-                  {selectedDept.manager ? (
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-primary-hover)] flex items-center justify-center text-white font-bold text-sm">{selectedDept.manager.displayName.charAt(0)}</div>
-                      <div>
-                        <p className="text-sm font-medium text-[var(--text-primary)]">{selectedDept.manager.displayName}</p>
-                        <p className="text-[10px] text-[var(--text-muted)] flex items-center gap-1"><Mail size={10} /> {selectedDept.manager.email}</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-[var(--text-muted)]">Aucun responsable assigné</p>
-                  )}
-                </div>
-
-                {/* Employees list */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-[10px] text-[var(--text-muted)] uppercase flex items-center gap-1"><Users size={10} /> {selectedDept.deptEmployees?.length || 0} employé(s) affecté(s)</p>
-                    <button onClick={() => setShowAddEmpModal(true)} className="btn-secondary h-7 px-2.5 text-[10px] font-bold gap-1">
-                      <UserPlus size={12} /> Ajouter un employé
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {selectedDept.deptEmployees?.map((emp: any) => (
-                      <div key={emp.id} className="flex items-center gap-3 p-2 rounded-lg bg-[var(--bg-elevated)]">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-primary-hover)] flex items-center justify-center text-white text-xs font-bold">{emp.firstName?.charAt(0)}{emp.lastName?.charAt(0)}</div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-[var(--text-primary)]">{emp.fullName}</p>
-                          <p className="text-[10px] text-[var(--text-muted)]">{emp.position}</p>
-                        </div>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]">{emp.contractType}</span>
-                      </div>
-                    ))}
-                    {(!selectedDept.deptEmployees || selectedDept.deptEmployees.length === 0) && (
-                      <p className="text-xs text-[var(--text-muted)] text-center py-4">Aucun employé affecté dans ce département</p>
-                    )}
-                  </div>
-                </div>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/50" onClick={() => setSelectedDepartmentId(null)} />
+            <motion.section initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} className="fixed inset-y-0 right-0 z-50 w-full max-w-lg overflow-y-auto border-l border-[var(--glass-border)] bg-[var(--bg-card)] p-6 shadow-2xl" aria-label={`Département ${selectedDepartment.name}`}>
+              <div className="mb-5 flex items-start justify-between border-b border-[var(--divider)] pb-4">
+                <div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded bg-[var(--accent-primary)]/10"><Building2 className="text-[var(--accent-primary)]" size={22} /></div><div><h2 className="text-lg font-semibold text-[var(--text-primary)]">{selectedDepartment.name}</h2><p className="text-xs text-[var(--text-muted)]">{selectedDepartment.members.length} membre{selectedDepartment.members.length === 1 ? '' : 's'}</p></div></div>
+                <div className="flex gap-1"><button type="button" onClick={() => openEdit(selectedDepartment)} className="rounded p-2 text-[var(--text-muted)] hover:bg-white/5" aria-label="Modifier"><Edit3 size={16} /></button><button type="button" onClick={() => removeDepartment(selectedDepartment)} className="rounded p-2 text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--accent-danger)]" aria-label="Supprimer"><Trash2 size={16} /></button><button type="button" onClick={() => setSelectedDepartmentId(null)} className="rounded p-2 text-[var(--text-muted)] hover:bg-white/5" aria-label="Fermer"><X size={18} /></button></div>
               </div>
-            </motion.div>
+              <div className="mb-5 rounded border border-[var(--divider)] p-3"><p className="mb-1 text-[10px] uppercase text-[var(--text-muted)]">Responsable du département</p><p className="text-sm font-medium text-[var(--text-primary)]">{selectedDepartment.managerName || 'Aucun responsable assigné'}</p>{selectedDepartment.managerEmail && <p className="text-xs text-[var(--text-muted)]">{selectedDepartment.managerEmail}</p>}</div>
+              <div className="mb-3 flex items-center justify-between gap-3"><h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Users size={15} /> Membres</h3><div className="flex min-w-0 gap-2"><select aria-label="Choisir un membre" value={selectedPersonId} onChange={(event) => setSelectedPersonId(event.target.value)} className="glass-input h-8 min-w-0 text-xs"><option value="">Choisir un membre…</option>{availablePeople.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select><button type="button" disabled={!selectedPersonId || assignPerson.isPending} onClick={() => companyId && selectedPersonId && assignPerson.mutate({ companyId, departmentId: selectedDepartment.id, userId: Number(selectedPersonId) })} className="btn-primary h-8 shrink-0 px-2 text-xs"><UserPlus size={13} /> Ajouter</button></div></div>
+              <div className="space-y-2">
+                {selectedDepartment.members.map((person) => <div key={person.id} className="flex items-center gap-3 rounded border border-[var(--divider)] p-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--accent-primary)]/10 text-sm font-semibold text-[var(--accent-primary)]">{person.name.charAt(0).toLocaleUpperCase()}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-[var(--text-primary)]">{person.name}</p><p className="truncate text-xs text-[var(--text-muted)]">{person.email || person.role}</p></div><button type="button" disabled={unassignPerson.isPending} onClick={() => companyId && unassignPerson.mutate({ companyId, departmentId: selectedDepartment.id, userId: person.id })} className="rounded p-2 text-xs text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--accent-danger)]" aria-label={`Retirer ${person.name}`}><X size={15} /></button></div>)}
+                {!selectedDepartment.members.length && <p className="rounded border border-dashed border-[var(--divider)] py-8 text-center text-xs text-[var(--text-muted)]">Aucun membre affecté.</p>}
+              </div>
+            </motion.section>
           </>
         )}
       </AnimatePresence>
 
-      {/* EDIT DEPARTMENT MODAL */}
       <AnimatePresence>
-        {showEditModal && editingDept && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-end">
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} className="h-full w-full max-w-md space-y-4 overflow-y-auto border-l border-[var(--glass-border)] bg-[var(--bg-card)] p-6 shadow-2xl">
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Edit3 size={16} className="text-[var(--accent-primary)]" /> Modifier le Département
-                </h3>
-                <button onClick={() => setShowEditModal(false)} className="p-1 rounded hover:bg-white/10 text-white">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-[var(--text-secondary)] mb-1">Nom du Département *</label>
-                  <input
-                    value={editingDept.name}
-                    onChange={(e) => setEditingDept({ ...editingDept, name: e.target.value })}
-                    className="w-full h-9 px-3 glass-input text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-[var(--text-secondary)] mb-1">Responsable (Manager) du Département</label>
-                  <select
-                    value={editingDept.managerId || ''}
-                    onChange={(e) => setEditingDept({ ...editingDept, managerId: e.target.value })}
-                    className="w-full h-9 px-3 glass-input text-xs"
-                  >
-                    <option value="">Sélectionner un responsable...</option>
-                    {users.map((u: any) => (
-                      <option key={u.uid} value={u.uid}>{u.displayName} ({u.roleName || 'Utilisateur'})</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button onClick={() => setShowEditModal(false)} className="btn-ghost h-9 text-xs">Annuler</button>
-                <button onClick={handleUpdate} className="btn-primary h-9 text-xs font-bold gap-1.5"><Check size={14} /> Enregistrer</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ASSIGN EMPLOYEE MODAL */}
-      <AnimatePresence>
-        {showAddEmpModal && selectedDept && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-end">
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} className="h-full w-full max-w-md space-y-4 overflow-y-auto border-l border-[var(--glass-border)] bg-[var(--bg-card)] p-6 shadow-2xl">
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <UserPlus size={16} className="text-[var(--accent-primary)]" /> Affecter un Employé
-                </h3>
-                <button onClick={() => setShowAddEmpModal(false)} className="p-1 rounded hover:bg-white/10 text-white">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-xs text-[var(--text-secondary)] mb-1">Sélectionner un employé à ajouter à {selectedDept.name}</label>
-                <select
-                  value={selectedEmpToAssign}
-                  onChange={(e) => setSelectedEmpToAssign(e.target.value)}
-                  className="w-full h-9 px-3 glass-input text-xs"
-                >
-                  <option value="">Sélectionner un employé...</option>
-                  {employees.filter((emp: any) => emp.departmentId !== selectedDept.id).map((emp: any) => (
-                    <option key={emp.id} value={emp.id}>{emp.fullName} — {emp.position}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button onClick={() => setShowAddEmpModal(false)} className="btn-ghost h-9 text-xs">Annuler</button>
-                <button onClick={handleAssignEmployee} disabled={!selectedEmpToAssign} className="btn-primary h-9 text-xs font-bold gap-1.5"><UserPlus size={14} /> Affecter</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* New Department Drawer - right sidebar */}
-      <AnimatePresence>
-        {showDrawer && (
+        {drawerOpen && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowDrawer(false)} />
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-              className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-[var(--bg-card)] border-l border-[var(--glass-border)] z-50 overflow-y-auto">
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">Nouveau Departement</h2>
-                  <button onClick={() => setShowDrawer(false)} className="p-2 rounded-lg hover:bg-white/5"><X size={18} className="text-[var(--text-muted)]" /></button>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-[var(--text-secondary)] mb-1.5">Nom du departement</label>
-                    <input value={newDept.name} onChange={(e) => setNewDept({ ...newDept, name: e.target.value })} className="w-full h-10 px-3 glass-input text-sm" placeholder="Ex: Ingenierie Reseau" />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-[var(--text-secondary)] mb-1.5">Responsable</label>
-                    <select value={newDept.managerId} onChange={(e) => setNewDept({ ...newDept, managerId: e.target.value })} className="w-full h-10 px-3 glass-input text-sm">
-                      <option value="">Selectionner un responsable...</option>
-                      {users.map((u: any) => <option key={u.uid} value={u.uid}>{u.displayName}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex gap-3 pt-2">
-                    <button onClick={() => setShowDrawer(false)} className="flex-1 btn-ghost h-10 justify-center">Annuler</button>
-                    <button onClick={handleCreate} disabled={!newDept.name} className="flex-1 btn-primary h-10 justify-center disabled:opacity-50">Creer</button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[60] bg-black/50" onClick={() => setDrawerOpen(false)} />
+            <motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} className="fixed inset-y-0 right-0 z-[60] w-full max-w-md overflow-y-auto border-l border-[var(--glass-border)] bg-[var(--bg-card)] p-6 shadow-2xl">
+              <div className="mb-6 flex items-center justify-between border-b border-[var(--divider)] pb-4"><h2 className="text-base font-semibold text-[var(--text-primary)]">{editingDepartment ? 'Modifier le département' : 'Nouveau département'}</h2><button type="button" onClick={() => setDrawerOpen(false)} className="rounded p-2 text-[var(--text-muted)] hover:bg-white/5" aria-label="Fermer"><X size={18} /></button></div>
+              <form onSubmit={saveDepartment} className="space-y-4">
+                <div><label htmlFor="department-name" className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Nom du département *</label><input id="department-name" value={departmentName} onChange={(event) => setDepartmentName(event.target.value)} maxLength={120} required minLength={2} autoFocus className="glass-input h-10 w-full px-3 text-sm" placeholder="Ex. Comptabilité" /></div>
+                <div><label htmlFor="department-manager" className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">Responsable</label><select id="department-manager" value={managerId} onChange={(event) => setManagerId(event.target.value)} className="glass-input h-10 w-full px-3 text-sm"><option value="">Aucun responsable</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name} — {person.role}</option>)}</select><p className="mt-1 text-[11px] text-[var(--text-muted)]">Seuls les membres actifs de l’entreprise sont proposés.</p></div>
+                <div className="flex justify-end gap-2 border-t border-[var(--divider)] pt-4"><button type="button" onClick={() => setDrawerOpen(false)} className="btn-ghost h-9">Annuler</button><button type="submit" disabled={!departmentName.trim() || createDepartment.isPending || updateDepartment.isPending} className="btn-primary h-9">{createDepartment.isPending || updateDepartment.isPending ? 'Enregistrement…' : editingDepartment ? 'Enregistrer' : 'Créer'}</button></div>
+              </form>
+            </motion.aside>
           </>
         )}
       </AnimatePresence>

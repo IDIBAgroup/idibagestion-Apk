@@ -12,6 +12,7 @@ import {
 import { getAll, addAndNotify, updateAndNotify, removeAndNotify, subscribe } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
 import { useUIStore } from '@/stores/uiStore';
+import { getChatPresentation } from '@/lib/chat-presentation';
 import type { Chat, ChatMessage, ChatParticipant, User as UserType } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -492,15 +493,9 @@ export function ChatPage() {
   };
 
   // ---- Render helpers ----
-  const getChatIcon = (chat: Chat) => {
-    if (chat.type === 'external') {
-      if (chat.externalEntityType === 'client') return <Building2 size={18} className="text-blue-400" />;
-      if (chat.externalEntityType === 'vendor') return <Briefcase size={18} className="text-[var(--accent-primary)]" />;
-      return <Globe size={18} className="text-purple-400" />;
-    }
-    if (chat.scope === 'department') return <Users size={18} className="text-emerald-400" />;
-    if (chat.scope === 'project') return <Briefcase size={18} className="text-amber-400" />;
-    return <Hash size={18} className="text-[var(--accent-primary)]" />;
+  const getChatIcon = (chat: Chat, size = 18) => {
+    const { Icon, iconClassName } = getChatPresentation(chat);
+    return <Icon size={size} className={iconClassName} />;
   };
 
   const formatTime = (dateStr?: string) => {
@@ -596,7 +591,7 @@ export function ChatPage() {
                       selectedChatId === chat.id && "bg-[var(--accent-primary)]/10"
                     )}
                   >
-                    <div className="w-10 h-10 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center shrink-0 border border-[var(--divider)]">
+                    <div className={cn('w-10 h-10 rounded-full flex items-center justify-center shrink-0 border border-[var(--divider)]', getChatPresentation(chat).avatarClassName)}>
                       {getChatIcon(chat)}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -616,7 +611,7 @@ export function ChatPage() {
                       </p>
                     </div>
                     {chat.unreadCount > 0 && (
-                      <span className="absolute right-3 top-3 w-5 h-5 rounded-full bg-[var(--accent-primary)] text-white text-[10px] font-bold flex items-center justify-center">
+                      <span className={cn('absolute right-3 top-3 w-5 h-5 rounded-full text-white text-[10px] font-bold flex items-center justify-center', getChatPresentation(chat).unreadClassName)}>
                         {chat.unreadCount}
                       </span>
                     )}
@@ -641,7 +636,7 @@ export function ChatPage() {
                 >
                   <ChevronLeft size={20} />
                 </button>
-                <div className="w-9 h-9 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center border border-[var(--divider)]">
+                <div className={cn('w-9 h-9 rounded-full flex items-center justify-center border border-[var(--divider)]', getChatPresentation(selectedChat).avatarClassName)}>
                   {getChatIcon(selectedChat)}
                 </div>
                 <div>
@@ -1348,7 +1343,7 @@ export function ChatPage() {
                   <div className="flex-1 space-y-3 overflow-y-auto p-4">
                     <div className="flex items-center justify-between rounded-xl border border-[#1FB472]/20 bg-[#1FB472]/10 p-3">
                       <div className="flex items-center gap-2"><Bot size={17} className="text-[#74E5B0]" /><div><p className="text-xs font-semibold">Assistant IA Notetaker</p><p className="mt-0.5 text-[9px] text-white/50">{isNotetakerActive ? 'Notes de démonstration' : 'En pause'}</p></div></div>
-                      <button type="button" onClick={() => setIsNotetakerActive(active => !active)} aria-label={isNotetakerActive ? 'Mettre le notetaker en pause' : 'Activer le notetaker'} className={cn('rounded border px-2 py-0.5 text-xs font-semibold', isNotetakerActive ? 'border-[#1FB472] bg-[#1FB472] text-[#081C2D]' : 'border-white/15 bg-white/10 text-white/60')}>{isNotetakerActive ? 'Actif' : 'Pause'}</button>
+                      <button type="button" onClick={() => setIsNotetakerActive(active => !active)} aria-label={isNotetakerActive ? 'Mettre le notetaker en pause' : 'Activer le notetaker'} className={cn('rounded-full px-2.5 py-1 text-[9px] font-semibold', isNotetakerActive ? 'bg-[#1FB472] text-[#081C2D]' : 'bg-white/10 text-white/60')}>{isNotetakerActive ? 'Actif' : 'Pause'}</button>
                     </div>
                     <p className="text-[10px] leading-relaxed text-white/50">Les notes ci-dessous sont des exemples. La transcription audio en direct nécessite un service de transcription connecté.</p>
                     {notetakerNotes.map((note, index) => <div key={index} className="flex items-start gap-2 rounded-xl border border-white/8 bg-white/5 p-3 text-[11px] leading-relaxed text-white/80"><CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[#1FB472]" /><span>{note}</span></div>)}

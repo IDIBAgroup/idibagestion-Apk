@@ -4,7 +4,7 @@ import {
   Zap, Eye, ExternalLink, Bot, CheckCircle, Circle,
   Linkedin, Twitter, Facebook, Newspaper, Briefcase, MessageSquare,
   Filter, Sparkles, TrendingUp, AlertTriangle, Target, Clock,
-  Send, ThumbsUp, ThumbsDown, Copy,
+  Send, ThumbsUp, ThumbsDown, Copy, X,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { useUIStore } from '@/stores/uiStore';
@@ -235,7 +235,7 @@ export function VibeSignalsPage() {
                     <div className="w-8 h-8 rounded-lg bg-[var(--accent-purple)]/10 flex items-center justify-center"><Sparkles size={16} className="text-[var(--accent-purple)]" /></div>
                     <h3 className="text-base font-semibold text-[var(--text-primary)]">Message IA Genere</h3>
                   </div>
-                  <button onClick={() => setShowAIModal(false)} className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)]">✕</button>
+                  <button type="button" onClick={() => setShowAIModal(false)} aria-label="Fermer le formulaire" className="p-2 rounded-lg hover:bg-white/5 text-[var(--text-muted)]"><X size={18} /></button>
                 </div>
 
                 <div className="space-y-4">

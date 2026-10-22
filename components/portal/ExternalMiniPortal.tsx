@@ -6,7 +6,6 @@ import type { PortalUser } from '@/types';
 import { getAll, addAndNotify, updateAndNotify } from '@/lib/db';
 import { getPortalContracts, getPortalInvoices, getPortalProjects, logPortalActivity } from '@/lib/api';
 import { useUIStore } from '@/stores/uiStore';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 
 type Props = {
   user: PortalUser;
@@ -185,7 +184,7 @@ export function ExternalMiniPortal({ user, onLogout }: Props) {
                     <h3 className="mt-1 text-base font-semibold">{document.title}</h3>
                   </div>
                 </div>
-                <StatusBadge status={document.status} label={getStatusLabel(document.status)} className="shrink-0" />
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${document.status === 'accepted' || document.status === 'paid' || document.status === 'delivered' ? 'bg-[#e8f5ef] text-[#1e7654]' : 'bg-[#fff0e8] text-[#b34d1c]'}`}>{getStatusLabel(document.status)}</span>
               </div>
               {document.amount !== undefined && <div className="flex items-center justify-between gap-3 px-1 py-4">
                 <span className="text-sm text-[#65737b]">Montant TTC</span>

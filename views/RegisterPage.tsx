@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@/lib/navigation";
 import { ArrowRight, Loader2, LockKeyhole } from "lucide-react";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -7,6 +7,7 @@ import { trpc } from "@/providers/trpc";
 import { useUIStore } from "@/stores/uiStore";
 import { useAuth } from "@/hooks/useAuth";
 import { useCompanySelectionStore } from "@/stores/companySelectionStore";
+import { OHADA_COUNTRIES, OHADA_INDUSTRIES, type OhadaCountryCode, type OhadaIndustryCode } from "@/lib/ohada/countries";
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -16,17 +17,36 @@ export function RegisterPage() {
     state => state.setActiveCompanyId
   );
   const { data: plans = [] } = trpc.plan.list.useQuery();
+  const [selectedPlanId, setSelectedPlanId] = useState<number | "">("");
   const createCompany = trpc.company.create.useMutation();
   const createSubscription = trpc.subscription.create.useMutation();
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    name: string;
+    slug: string;
+    email: string;
+    phone: string;
+    city: string;
+    countryCode: OhadaCountryCode;
+    industryCode: OhadaIndustryCode;
+    customIndustryName: string;
+  }>({
     name: "",
     slug: "",
     email: user?.email ?? "",
     phone: "",
     city: "",
-    country: "Cameroun",
+    countryCode: "CM",
+    industryCode: "other",
+    customIndustryName: "",
   });
+
+  useEffect(() => {
+    if (selectedPlanId !== "") return;
+    const starter = plans.find(plan => plan.slug === "starter-monthly" && plan.billingCycle === "monthly");
+    const defaultPlan = starter ?? plans.find(plan => plan.billingCycle === "monthly" && !plan.isEnterprise);
+    if (defaultPlan) setSelectedPlanId(defaultPlan.id);
+  }, [plans, selectedPlanId]);
 
   const updateName = (name: string) =>
     setForm(current => ({
@@ -52,19 +72,19 @@ export function RegisterPage() {
         email: form.email.trim() || undefined,
         phone: form.phone.trim() || undefined,
         city: form.city.trim() || undefined,
-        country: form.country,
+        countryCode: form.countryCode,
+        industryCode: form.industryCode,
+        customIndustryName: form.industryCode === "other" ? form.customIndustryName.trim() : undefined,
       });
       setActiveCompanyId(company.id);
 
-      const starterPlan = plans.find(
-        plan =>
-          plan.slug === "starter-monthly" && plan.billingCycle === "monthly"
-      );
-      if (starterPlan?.trialDays && starterPlan.trialDays > 0) {
+      const selectedPlan = plans.find(plan => plan.id === selectedPlanId && plan.billingCycle === "monthly");
+      if (!selectedPlan) throw new Error("Choisissez un forfait mensuel disponible.");
+      if (selectedPlan.trialDays && selectedPlan.trialDays > 0) {
         await createSubscription.mutateAsync({
           companyId: company.id,
-          planId: starterPlan.id,
-          billingCycle: starterPlan.billingCycle,
+          planId: selectedPlan.id,
+          billingCycle: selectedPlan.billingCycle,
         });
       }
 
@@ -153,19 +173,30 @@ export function RegisterPage() {
             onChange={event => setForm({ ...form, city: event.target.value })}
             disabled={loading}
           />
-          <AuthField
-            id="company-country"
-            name="country"
-            label="Pays"
-            autoComplete="country-name"
-            value={form.country}
-            onChange={event =>
-              setForm({ ...form, country: event.target.value })
-            }
-            disabled={loading}
-          />
+          <div className="id-auth-select-field">
+            <label htmlFor="company-country">Pays membre de l’OHADA</label>
+            <select id="company-country" name="countryCode" value={form.countryCode} onChange={event => setForm({ ...form, countryCode: event.target.value as OhadaCountryCode })} disabled={loading}>
+              {OHADA_COUNTRIES.map(country => <option key={country.code} value={country.code}>{country.name} · {country.currency}</option>)}
+            </select>
+          </div>
         </div>
-        <button type="submit" disabled={loading} className="id-auth-submit">
+        <div className="id-auth-select-field">
+          <label htmlFor="company-industry">Secteur d’activité</label>
+          <select id="company-industry" value={form.industryCode} onChange={event => setForm({ ...form, industryCode: event.target.value as OhadaIndustryCode, customIndustryName: event.target.value === 'other' ? form.customIndustryName : '' })} disabled={loading}>
+            {OHADA_INDUSTRIES.map(industry => <option key={industry.code} value={industry.code}>{industry.label}</option>)}
+          </select>
+        </div>
+        {form.industryCode === 'other' && <AuthField id="company-custom-industry" name="customIndustryName" label="Précisez votre activité" required value={form.customIndustryName} onChange={event => setForm({ ...form, customIndustryName: event.target.value })} disabled={loading} />}
+        <div className="id-auth-select-field">
+          <label htmlFor="subscription-plan">Choisissez votre forfait de départ</label>
+          <select id="subscription-plan" value={selectedPlanId} onChange={event => setSelectedPlanId(Number(event.target.value))} disabled={loading || plans.length === 0} required>
+            {plans.filter(plan => plan.billingCycle === "monthly" && !plan.isEnterprise).map(plan => (
+              <option key={plan.id} value={plan.id}>{plan.name} — {plan.priceXAF.toLocaleString("fr-FR")} FCFA/mois {plan.trialDays ? "· essai de 14 jours" : ""}</option>
+            ))}
+          </select>
+          <p className="id-auth-help">Aucun paiement n’est demandé pendant l’essai. Vous pourrez changer de forfait ensuite.</p>
+        </div>
+        <button type="submit" disabled={loading || selectedPlanId === ""} className="id-auth-submit">
           {loading ? (
             <>
               <Loader2 size={17} className="animate-spin" /> Création en cours…

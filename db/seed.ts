@@ -25,13 +25,14 @@ async function seed() {
       maxInvoices: pack.limits.invoices,
       maxProjects: pack.limits.projects,
       features: JSON.stringify(pack.features),
+      moduleAccess: JSON.stringify(pack.modules),
       supportLevel: pack.supportLevel,
       trialDays: 14,
     })),
   );
 
   await db.insert(plans).values(planValues);
-  console.log("Seeded the Essentiel, Croissance, and Business+ subscription packs");
+  console.log("Seeded the Starter, Pro, Business, and Enterprise subscription packs");
 }
 
 seed().catch(console.error);

@@ -9,7 +9,6 @@ import {
   Play, Pause, Copy, Check, ChevronRight, RefreshCw, Upload,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { getAll, addAndNotify, updateAndNotify } from '@/lib/db';
 
@@ -644,7 +643,9 @@ export function VibeProspectingPage() {
                           <p className="text-[10px] text-[var(--text-muted)]">{seq.steps.length} étapes · {seq.channel}</p>
                         </div>
                       </div>
-                      <StatusBadge status={seq.status} />
+                      <span className={`text-[9px] px-2 py-0.5 rounded-full ${seq.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : seq.status === 'paused' ? 'bg-amber-500/10 text-amber-400' : seq.status === 'completed' ? 'bg-[var(--bg-elevated)] text-[var(--text-muted)]' : 'bg-blue-500/10 text-blue-400'}`}>
+                        {seq.status}
+                      </span>
                     </div>
 
                     {/* Metrics */}
@@ -927,7 +928,7 @@ export function VibeProspectingPage() {
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
               className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md glass-card z-50">
               <div className="p-6">
-                <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Ajouter à une séquence</h2>
+                <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-semibold text-[var(--text-primary)]">Ajouter à une séquence</h2><button type="button" onClick={() => setShowSequenceModal(false)} aria-label="Fermer le formulaire" className="p-2 rounded-lg hover:bg-white/5"><X size={18} className="text-[var(--text-muted)]" /></button></div>
                 <p className="text-xs text-[var(--text-muted)] mb-4">{selectedProspects.size} prospect(s) sélectionné(s)</p>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {sequences.map(seq => (
@@ -957,7 +958,7 @@ export function VibeProspectingPage() {
             <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
               className="fixed right-0 top-0 bottom-0 w-full max-w-sm border-l border-[var(--glass-border)] bg-[var(--bg-card)] z-50 overflow-y-auto shadow-2xl">
               <div className="p-6">
-                <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Sauvegarder la liste</h2>
+                <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-semibold text-[var(--text-primary)]">Sauvegarder la liste</h2><button type="button" onClick={() => setShowSaveList(false)} aria-label="Fermer le formulaire" className="p-2 rounded-lg hover:bg-white/5"><X size={18} className="text-[var(--text-muted)]" /></button></div>
                 <input value={listName} onChange={e => setListName(e.target.value)} placeholder="Nom de la liste..." className="w-full h-10 px-3 glass-input text-sm mb-4" />
                 <p className="text-xs text-[var(--text-muted)] mb-4">{filteredProspects.length} prospects seront sauvegardés avec les filtres actuels.</p>
                 <div className="flex gap-2">
@@ -978,7 +979,7 @@ export function VibeProspectingPage() {
             <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
               className="fixed right-0 top-0 bottom-0 w-full max-w-lg border-l border-[var(--glass-border)] bg-[var(--bg-card)] z-50 max-h-screen overflow-y-auto shadow-2xl">
               <div className="p-6">
-                <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Nouvelle Séquence</h2>
+                <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-semibold text-[var(--text-primary)]">Nouvelle Séquence</h2><button type="button" onClick={() => setShowCreateSequence(false)} aria-label="Fermer le formulaire" className="p-2 rounded-lg hover:bg-white/5"><X size={18} className="text-[var(--text-muted)]" /></button></div>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs text-[var(--text-secondary)] mb-1">Nom</label>

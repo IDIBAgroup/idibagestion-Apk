@@ -44,6 +44,7 @@
   ],
   "exclude": [
     "node_modules",
-    "legacy-vite"
+    "legacy-vite",
+    "_target-idibagestion-Apk"
   ]
 }

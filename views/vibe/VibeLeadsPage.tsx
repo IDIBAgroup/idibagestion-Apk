@@ -7,7 +7,6 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { useVibeStore } from '@/stores/vibeStore';
 import { AILeadSearchModal } from './AILeadSearchModal';
@@ -191,7 +190,7 @@ export function VibeLeadsPage() {
                     <select
                       value={lead.status}
                       onChange={(e) => updateStatus(lead.id, e.target.value)}
-                      className="rounded border border-[var(--glass-border)] px-2 py-0.5 text-xs font-semibold cursor-pointer"
+                      className="text-[10px] px-1.5 py-0.5 rounded border-0 cursor-pointer"
                       style={{ backgroundColor: statusLabels[lead.status]?.color + '20', color: statusLabels[lead.status]?.color }}
                     >
                       {Object.entries(statusLabels).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -237,7 +236,7 @@ export function VibeLeadsPage() {
                   <div className="glass-card-compact p-2"><p className="text-[10px] text-[var(--text-muted)]">Score</p><p className={`text-sm font-bold ${scoreColor(selectedLead.score)}`}>{selectedLead.score}/100</p></div>
                   <div className="glass-card-compact p-2"><p className="text-[10px] text-[var(--text-muted)]">Valeur estimée</p><p className="text-sm font-bold text-[var(--text-primary)]">{new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XAF', minimumFractionDigits: 0 }).format(selectedLead.estimatedValue)}</p></div>
                   <div className="glass-card-compact p-2"><p className="text-[10px] text-[var(--text-muted)]">Temperature</p><div className="flex items-center gap-1">{temperatureIcons[selectedLead.temperature as keyof typeof temperatureIcons]}<span className="text-sm font-bold text-[var(--text-primary)] capitalize">{selectedLead.temperature}</span></div></div>
-                  <div className="glass-card-compact p-2"><p className="mb-1 text-[10px] text-[var(--text-muted)]">Statut</p><StatusBadge status={selectedLead.status} label={statusLabels[selectedLead.status]?.label ?? selectedLead.status} /></div>
+                  <div className="glass-card-compact p-2"><p className="text-[10px] text-[var(--text-muted)]">Statut</p><p className="text-sm font-bold" style={{ color: statusLabels[selectedLead.status]?.color }}>{statusLabels[selectedLead.status]?.label}</p></div>
                 </div>
 
                 <div className="space-y-2 mb-4">

@@ -35,6 +35,8 @@ const faqItems = [
   { q: 'Comment ajouter un document a la bibliothèque ?', a: 'Rendez-vous dans Ressources > Bibliotheque, cliquez sur "Ajouter un document", selectionnez la categorie (reglement, procedure, manuel...) et deposez votre fichier.', category: 'Ressources', helpful: 6 },
 ];
 
+type SupportFaq = { id: string; q: string; a: string; category: string; helpful: number };
+
 export function SupportPage() {
   const { setCurrentPageTitle, showToast } = useUIStore();
   const [search, setSearch] = useState('');
@@ -45,7 +47,11 @@ export function SupportPage() {
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [activeView, setActiveView] = useState<'tickets' | 'faq' | 'stats'>('tickets');
-  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
+  const [faqs, setFaqs] = useState<SupportFaq[]>(() => faqItems.map((faq, index) => ({ ...faq, id: `default-${index}` })));
+  const [faqFormOpen, setFaqFormOpen] = useState(false);
+  const [editingFaqId, setEditingFaqId] = useState<string | null>(null);
+  const [faqForm, setFaqForm] = useState({ q: '', a: '', category: '' });
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [users, setUsers] = useState<any[]>([]);
 
@@ -59,6 +65,12 @@ export function SupportPage() {
     setCurrentPageTitle('Centre de Support');
     setTickets(getAll('tickets') as Ticket[]);
     setUsers(getAll('users') || []);
+    try {
+      const stored = JSON.parse(localStorage.getItem('idibages_db_v3') || '{}');
+      if (Array.isArray(stored.faqs)) setFaqs(stored.faqs);
+    } catch {
+      // Keep the built-in FAQ when the local cache cannot be read.
+    }
   }, [setCurrentPageTitle]);
 
   const refreshTickets = () => {
@@ -184,7 +196,42 @@ export function SupportPage() {
     showToast('Ticket supprime', 'success');
   };
 
-  const filteredFaq = faqItems.filter(f =>
+  const openFaqForm = (faq?: SupportFaq) => {
+    setEditingFaqId(faq?.id || null);
+    setFaqForm(faq ? { q: faq.q, a: faq.a, category: faq.category } : { q: '', a: '', category: '' });
+    setFaqFormOpen(true);
+  };
+
+  const handleSaveFaq = () => {
+    const question = faqForm.q.trim();
+    const answer = faqForm.a.trim();
+    const category = faqForm.category.trim();
+    if (!question || !answer || !category) {
+      showToast('La question, la réponse et la catégorie sont obligatoires', 'warning');
+      return;
+    }
+
+    const savedFaqs = editingFaqId
+      ? faqs.map(faq => faq.id === editingFaqId ? { ...faq, q: question, a: answer, category } : faq)
+      : [...faqs, { id: `faq-${Date.now()}`, q: question, a: answer, category, helpful: 0 }];
+
+    try {
+      const stored = JSON.parse(localStorage.getItem('idibages_db_v3') || '{}');
+      stored.faqs = savedFaqs;
+      localStorage.setItem('idibages_db_v3', JSON.stringify(stored));
+    } catch {
+      showToast('Impossible d’enregistrer la FAQ sur cet appareil', 'error');
+      return;
+    }
+
+    setFaqs(savedFaqs);
+    setFaqFormOpen(false);
+    setEditingFaqId(null);
+    setFaqForm({ q: '', a: '', category: '' });
+    showToast(editingFaqId ? 'FAQ mise à jour' : 'FAQ ajoutée', 'success');
+  };
+
+  const filteredFaq = faqs.filter(f =>
     !search || f.q.toLowerCase().includes(search.toLowerCase()) || f.a.toLowerCase().includes(search.toLowerCase()) || f.category.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -306,27 +353,31 @@ export function SupportPage() {
       {/* ====== FAQ VIEW ====== */}
       {activeView === 'faq' && (
         <div className="space-y-4">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex-1 max-w-md relative">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher dans la FAQ..." className="w-full h-9 pl-9 pr-4 glass-input text-sm" />
             </div>
+            <button onClick={() => openFaqForm()} className="btn-primary h-9 px-3 gap-1.5"><Plus size={14} /> Ajouter une FAQ</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filteredFaq.map((faq, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+              <motion.div key={faq.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
                 <GlassCard><div className="p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-medium">{faq.category}</span>
                       <h4 className="text-sm font-medium text-[var(--text-primary)] mt-1.5">{faq.q}</h4>
                     </div>
-                    <button onClick={() => setExpandedFaq(expandedFaq === i ? null : i)} className="p-1 rounded hover:bg-white/5 shrink-0">
-                      {expandedFaq === i ? <ChevronUp size={14} className="text-[var(--accent-primary)]" /> : <ChevronDown size={14} className="text-[var(--text-muted)]" />}
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => openFaqForm(faq)} aria-label="Modifier cette FAQ" title="Modifier" className="p-1 rounded hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-primary)]"><Edit3 size={13} /></button>
+                      <button onClick={() => setExpandedFaq(expandedFaq === faq.id ? null : faq.id)} aria-label={expandedFaq === faq.id ? 'Masquer la réponse' : 'Afficher la réponse'} className="p-1 rounded hover:bg-white/5">
+                        {expandedFaq === faq.id ? <ChevronUp size={14} className="text-[var(--accent-primary)]" /> : <ChevronDown size={14} className="text-[var(--text-muted)]" />}
+                      </button>
+                    </div>
                   </div>
                   <AnimatePresence>
-                    {expandedFaq === i && (
+                    {expandedFaq === faq.id && (
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                         <p className="text-xs text-[var(--text-secondary)] mt-3 pt-3 border-t border-[var(--divider)]/50 leading-relaxed">{faq.a}</p>
                         <div className="flex items-center gap-3 mt-3">
@@ -437,7 +488,7 @@ export function SupportPage() {
                 <div className="flex flex-wrap gap-2 mb-4">
                   <span className="text-xs text-[var(--text-muted)] mr-1">Changer statut:</span>
                   {['new', 'open', 'in_progress', 'waiting', 'resolved'].map(s => (
-                    <button key={s} onClick={() => handleStatusChange(selectedTicket.id, s)} className={`rounded border px-2 py-0.5 text-xs font-semibold ${selectedTicket.status === s ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)] text-white' : 'border-[var(--glass-border)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
+                    <button key={s} onClick={() => handleStatusChange(selectedTicket.id, s)} className={`text-[10px] px-2 py-1 rounded font-medium ${selectedTicket.status === s ? 'bg-[var(--accent-primary)] text-white' : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
                       {s.replace('_', ' ')}
                     </button>
                   ))}
@@ -480,6 +531,40 @@ export function SupportPage() {
                 <div className="flex gap-2">
                   <input value={replyText} onChange={(e) => setReplyText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddComment()} className="flex-1 h-9 px-3 glass-input text-sm" placeholder="Votre reponse..." />
                   <button onClick={handleAddComment} className="btn-primary h-9 px-3 gap-1"><Send size={14} /></button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* FAQ create/edit sidebar */}
+      <AnimatePresence>
+        {faqFormOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setFaqFormOpen(false)} className="fixed inset-0 bg-black/50 z-50 flex justify-end">
+            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} onClick={event => event.stopPropagation()} className="h-full w-full max-w-lg overflow-y-auto border-l border-[var(--glass-border)] bg-[var(--bg-card)] shadow-2xl">
+              <div className="p-5">
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2"><BookOpen size={16} className="text-[var(--accent-primary)]" /> {editingFaqId ? 'Modifier la FAQ' : 'Ajouter une FAQ'}</h2>
+                  <button onClick={() => setFaqFormOpen(false)} aria-label="Fermer" className="p-2 rounded-lg hover:bg-white/5"><X size={16} className="text-[var(--text-muted)]" /></button>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="support-faq-question" className="block text-xs text-[var(--text-secondary)] mb-1">Question <span className="text-[var(--accent-danger)]">*</span></label>
+                    <input id="support-faq-question" autoFocus value={faqForm.q} onChange={event => setFaqForm({ ...faqForm, q: event.target.value })} className="w-full h-9 px-3 glass-input text-sm" placeholder="Saisissez la question" />
+                  </div>
+                  <div>
+                    <label htmlFor="support-faq-category" className="block text-xs text-[var(--text-secondary)] mb-1">Catégorie <span className="text-[var(--accent-danger)]">*</span></label>
+                    <input id="support-faq-category" value={faqForm.category} onChange={event => setFaqForm({ ...faqForm, category: event.target.value })} className="w-full h-9 px-3 glass-input text-sm" placeholder="Ex. Finances, RH, Projets..." />
+                  </div>
+                  <div>
+                    <label htmlFor="support-faq-answer" className="block text-xs text-[var(--text-secondary)] mb-1">Réponse <span className="text-[var(--accent-danger)]">*</span></label>
+                    <textarea id="support-faq-answer" rows={8} value={faqForm.a} onChange={event => setFaqForm({ ...faqForm, a: event.target.value })} className="w-full p-3 glass-input text-sm resize-y" placeholder="Rédigez la réponse à afficher dans la FAQ..." />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={() => setFaqFormOpen(false)} className="btn-secondary h-9 flex-1">Annuler</button>
+                    <button onClick={handleSaveFaq} className="btn-primary h-9 flex-1 gap-1.5"><Save size={14} /> {editingFaqId ? 'Enregistrer les modifications' : 'Ajouter la FAQ'}</button>
+                  </div>
                 </div>
               </div>
             </motion.div>

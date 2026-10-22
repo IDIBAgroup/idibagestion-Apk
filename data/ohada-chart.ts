@@ -322,5 +322,5 @@ export function filterOhadaChart(roots: ChartAccount[], query: string): ChartAcc
 }
 
 export const OHADA_POSTING_ACCOUNTS = accounts
-  .filter(([code]) => code.length >= 3)
+  .filter(([code]) => code.length >= 3 && !accounts.some(([childCode]) => childCode.length > code.length && childCode.startsWith(code)))
   .map(([code, label]) => ({ code, label }));

@@ -1,7 +1,12 @@
+import { DEFAULT_PLAN_FEATURES, type SubscriptionFeatureKey } from '@/lib/subscription-features';
+
 export type SubscriptionCycle = 'monthly' | 'yearly';
+export type SubscriptionPackSlug = 'starter' | 'pro' | 'business' | 'enterprise';
+
+export const ANNUAL_DISCOUNT_PERCENT = 20;
 
 export interface SubscriptionPack {
-  slug: 'starter' | 'pro' | 'enterprise';
+  slug: SubscriptionPackSlug;
   name: string;
   description: string;
   priceXAF: Record<SubscriptionCycle, number>;
@@ -12,71 +17,86 @@ export interface SubscriptionPack {
     projects: number;
   };
   features: string[];
+  modules: SubscriptionFeatureKey[];
   supportLevel: 'email' | 'priority' | 'dedicated';
   popular: boolean;
   enterprise: boolean;
 }
 
-// Annual pricing is billed upfront and equals ten monthly payments (two months free).
+// Prices are stored in XAF. Annual packs apply the configurable 20% discount
+// to twelve monthly payments and are billed upfront.
 export const SUBSCRIPTION_PACKS: SubscriptionPack[] = [
   {
     slug: 'starter',
-    name: 'Essentiel',
-    description: 'Les outils essentiels pour structurer la gestion d’une petite entreprise.',
-    priceXAF: { monthly: 14900, yearly: 149000 },
-    limits: { users: 5, clients: 100, invoices: 300, projects: 5 },
+    name: 'Starter',
+    description: 'Les outils essentiels pour gérer votre activité au quotidien.',
+    priceXAF: { monthly: 5_000, yearly: 48_000 },
+    limits: { users: 2, clients: 100, invoices: 300, projects: 0 },
     features: [
-      'Jusqu’à 5 utilisateurs',
-      '100 clients et fournisseurs',
-      'Jusqu’à 300 devis et factures par mois',
-      'Devis, facturation, relances et dépenses',
-      'Trésorerie et comptabilité de base',
-      'Projets et tâches (5 projets)',
-      'Messagerie interne et bibliothèque de documents',
-      'Assistance par e-mail',
+      '2 utilisateurs',
+      'Gestion des clients et fournisseurs',
+      'Devis, facturation et paiements',
+      'Gestion des dépenses',
+      'Documents PDF',
     ],
+    modules: DEFAULT_PLAN_FEATURES.starter,
     supportLevel: 'email',
     popular: false,
     enterprise: false,
   },
   {
     slug: 'pro',
-    name: 'Croissance',
-    description: 'La suite de gestion complète pour les PME qui accélèrent.',
-    priceXAF: { monthly: 49900, yearly: 499000 },
-    limits: { users: 15, clients: 1000, invoices: 2000, projects: 25 },
+    name: 'Pro',
+    description: 'Les outils de collaboration et de pilotage pour les équipes en croissance.',
+    priceXAF: { monthly: 15_000, yearly: 144_000 },
+    limits: { users: 5, clients: 1_000, invoices: 2_000, projects: 25 },
     features: [
-      'Jusqu’à 15 utilisateurs et 1 000 clients',
-      'Jusqu’à 2 000 documents commerciaux par mois',
-      'Tout le pack Essentiel',
-      'Comptabilité SYSCOHADA révisée et rapports financiers',
-      'Immobilisations, clôture comptable et préparation DSF OHADA',
-      'Ressources humaines, congés, paie et CNPS',
-      'VIBE Prospection et gestion des leads',
-      'Portails clients et fournisseurs',
-      'Messagerie et assistance prioritaire',
+      '5 utilisateurs',
+      'Tout Starter',
+      'CRM et gestion des prospects',
+      'Projets et tâches',
+      'Ressources humaines de base',
+      'Stocks et ressources',
     ],
+    modules: DEFAULT_PLAN_FEATURES.pro,
     supportLevel: 'priority',
     popular: true,
     enterprise: false,
   },
   {
-    slug: 'enterprise',
-    name: 'Business+',
-    description: 'Une offre évolutive pour les organisations multi-équipes et multi-entités.',
-    priceXAF: { monthly: 149000, yearly: 1490000 },
-    limits: { users: 50, clients: 5000, invoices: 10000, projects: 999 },
+    slug: 'business',
+    name: 'Business',
+    description: 'Une gestion financière et opérationnelle avancée pour les entreprises structurées.',
+    priceXAF: { monthly: 30_000, yearly: 288_000 },
+    limits: { users: 15, clients: 5_000, invoices: 10_000, projects: 999 },
     features: [
-      'Jusqu’à 50 utilisateurs inclus et 5 000 clients',
-      'Jusqu’à 10 000 documents commerciaux par mois',
-      'Tout le pack Croissance',
-      'Accès multi-sociétés et pilotage consolidé',
-      'Rôles, accès et circuits de validation avancés',
-      'Portails clients, fournisseurs et partenaires',
-      'Accompagnement prioritaire au paramétrage',
-      'Migration de données et intégrations spécifiques sur devis',
-      'Tarification adaptée au volume au-delà des limites incluses',
+      '15 utilisateurs',
+      'Tout Pro',
+      'Comptabilité SYSCOHADA révisée',
+      'Budgets et rapports avancés',
+      'Paie',
+      'Automatisations',
     ],
+    modules: DEFAULT_PLAN_FEATURES.business,
+    supportLevel: 'priority',
+    popular: false,
+    enterprise: false,
+  },
+  {
+    slug: 'enterprise',
+    name: 'Enterprise',
+    description: 'Une offre sur mesure pour les groupes et les organisations multi-sociétés.',
+    priceXAF: { monthly: 0, yearly: 0 },
+    limits: { users: 0, clients: 0, invoices: 0, projects: 0 },
+    features: [
+      'Tarification sur devis',
+      'Toutes les fonctionnalités Business',
+      'Gestion multi-sociétés',
+      'API personnalisées',
+      'Sécurité avancée',
+      'Support dédié',
+    ],
+    modules: DEFAULT_PLAN_FEATURES.enterprise,
     supportLevel: 'dedicated',
     popular: false,
     enterprise: true,

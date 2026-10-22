@@ -9,11 +9,13 @@ export function AuthShell({
   title,
   subtitle,
   wide = false,
+  compact = false,
 }: {
   children: ReactNode;
   title: string;
   subtitle: string;
   wide?: boolean;
+  compact?: boolean;
 }) {
   return (
     <main className="id-auth">
@@ -26,7 +28,7 @@ export function AuthShell({
       <Link href="/" className="id-auth-back">
         <ArrowLeft size={15} /> Retour à l’accueil
       </Link>
-      <div className={`id-auth-frame ${wide ? "id-auth-wide" : ""}`}>
+      <div className={`id-auth-frame ${wide ? "id-auth-wide" : ""} ${compact ? "id-auth-compact" : ""}`}>
         <section className="id-auth-card" aria-labelledby="auth-title">
           <header className="id-auth-brand">
             <Link href="/" aria-label="IDIBAGES accueil">

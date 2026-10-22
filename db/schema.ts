@@ -85,6 +85,7 @@ export const plans = mysqlTable("plans", {
   maxInvoices: int("maxInvoices").default(50),
   maxProjects: int("maxProjects").default(5),
   features: text("features"), // JSON array
+  moduleAccess: text("moduleAccess"), // JSON array of stable subscription feature keys
   supportLevel: mysqlEnum("supportLevel", ["email", "priority", "dedicated"]).default("email"),
   trialDays: int("trialDays").default(14),
   isActive: boolean("isActive").default(true),
@@ -121,6 +122,56 @@ export const companies = mysqlTable("companies", {
 
 export type Company = typeof companies.$inferSelect;
 export type InsertCompany = typeof companies.$inferInsert;
+
+/** Jurisdiction and operating defaults for each legal company (one row per tenant company). */
+export const companyProfiles = mysqlTable(
+  "company_profiles",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    countryCode: varchar("countryCode", { length: 2 }).notNull(),
+    currencyCode: varchar("currencyCode", { length: 3 }).notNull(),
+    timezone: varchar("timezone", { length: 80 }).notNull(),
+    locale: varchar("locale", { length: 12 }).notNull(),
+    fiscalYearStartMonth: int("fiscalYearStartMonth").default(1).notNull(),
+    fiscalYearStartDay: int("fiscalYearStartDay").default(1).notNull(),
+    industryCode: varchar("industryCode", { length: 40 }).default("other").notNull(),
+    customIndustryName: varchar("customIndustryName", { length: 120 }),
+    accountingFramework: varchar("accountingFramework", { length: 40 }).default("SYSCOHADA_REVISED").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("company_profiles_company_uq").on(table.companyId),
+    index("company_profiles_country_industry_idx").on(table.countryCode, table.industryCode),
+  ],
+);
+
+export type CompanyProfile = typeof companyProfiles.$inferSelect;
+
+/** Company-configured tax rules are effective-dated; statutory rates are never guessed by the app. */
+export const companyTaxRules = mysqlTable(
+  "company_tax_rules",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    countryCode: varchar("countryCode", { length: 2 }).notNull(),
+    code: varchar("code", { length: 40 }).notNull(),
+    name: varchar("name", { length: 120 }).notNull(),
+    taxType: mysqlEnum("taxType", ["vat", "withholding", "excise", "corporate_income", "payroll_income", "employee_social", "employer_social", "other"]).default("vat").notNull(),
+    rateBasisPoints: int("rateBasisPoints").notNull(),
+    effectiveFrom: date("effectiveFrom", { mode: "string" }).notNull(),
+    effectiveTo: date("effectiveTo", { mode: "string" }),
+    isActive: boolean("isActive").default(true).notNull(),
+    createdByUserId: bigint("createdByUserId", { mode: "number", unsigned: true }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("company_tax_rules_company_code_from_uq").on(table.companyId, table.countryCode, table.code, table.effectiveFrom),
+    index("company_tax_rules_effective_idx").on(table.companyId, table.countryCode, table.taxType, table.isActive, table.effectiveFrom),
+  ],
+);
 
 // ============================================
 // COMPANY MEMBERSHIPS (Company-scoped access)
@@ -192,6 +243,40 @@ export const clients = mysqlTable("clients", {
 export type Client = typeof clients.$inferSelect;
 export type InsertClient = typeof clients.$inferInsert;
 
+/** Tenant-owned departments and explicit membership links for the HR directory. */
+export const departments = mysqlTable(
+  "departments",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    name: varchar("name", { length: 120 }).notNull(),
+    managerUserId: bigint("managerUserId", { mode: "number", unsigned: true }),
+    createdByUserId: bigint("createdByUserId", { mode: "number", unsigned: true }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("departments_company_name_uq").on(table.companyId, table.name),
+    index("departments_company_manager_idx").on(table.companyId, table.managerUserId),
+  ],
+);
+
+export const departmentMembers = mysqlTable(
+  "department_members",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    departmentId: int("departmentId").notNull(),
+    userId: bigint("userId", { mode: "number", unsigned: true }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("department_members_department_user_uq").on(table.departmentId, table.userId),
+    index("department_members_company_department_idx").on(table.companyId, table.departmentId),
+    index("department_members_company_user_idx").on(table.companyId, table.userId),
+  ],
+);
+
 // ============================================
 // PRODUCTS / ARTICLES (Catalogue Produits)
 // ============================================
@@ -214,6 +299,202 @@ export const products = mysqlTable("products", {
 
 export type Product = typeof products.$inferSelect;
 export type InsertProduct = typeof products.$inferInsert;
+
+/** Immutable posted journal document; every document owns its balanced debit/credit lines. */
+export const journalEntries = mysqlTable(
+  "journal_entries",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    entryDate: date("entryDate", { mode: "string" }).notNull(),
+    journalCode: varchar("journalCode", { length: 12 }).notNull(),
+    pieceNumber: varchar("pieceNumber", { length: 100 }).notNull(),
+    label: varchar("label", { length: 500 }).notNull(),
+    analyticCode: varchar("analyticCode", { length: 120 }),
+    baseCurrency: varchar("baseCurrency", { length: 3 }).notNull(),
+    transactionCurrency: varchar("transactionCurrency", { length: 3 }).notNull(),
+    exchangeRate: decimal("exchangeRate", { precision: 22, scale: 10 }).notNull(),
+    transactionAmount: decimal("transactionAmount", { precision: 22, scale: 2 }).notNull(),
+    createdByUserId: bigint("createdByUserId", { mode: "number", unsigned: true }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [
+    index("journal_entries_company_date_idx").on(table.companyId, table.entryDate),
+    uniqueIndex("journal_entries_company_journal_piece_uq").on(table.companyId, table.journalCode, table.pieceNumber),
+  ],
+);
+
+export const journalEntryLines = mysqlTable(
+  "journal_entry_lines",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    journalEntryId: bigint("journalEntryId", { mode: "number", unsigned: true }).notNull(),
+    lineNumber: int("lineNumber").notNull(),
+    accountCode: varchar("accountCode", { length: 20 }).notNull(),
+    accountLabel: varchar("accountLabel", { length: 255 }).notNull(),
+    debit: decimal("debit", { precision: 22, scale: 2 }).default("0.00").notNull(),
+    credit: decimal("credit", { precision: 22, scale: 2 }).default("0.00").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("journal_entry_lines_entry_number_uq").on(table.journalEntryId, table.lineNumber),
+    index("journal_entry_lines_company_entry_idx").on(table.companyId, table.journalEntryId),
+    index("journal_entry_lines_company_account_idx").on(table.companyId, table.accountCode),
+  ],
+);
+
+export const financialReports = mysqlTable(
+  "financial_reports",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    type: mysqlEnum("type", ["income_statement", "balance_sheet", "cash_flow"]).notNull(),
+    period: varchar("period", { length: 12 }).notNull(),
+    startDate: date("startDate", { mode: "string" }).notNull(),
+    endDate: date("endDate", { mode: "string" }).notNull(),
+    reportData: text("reportData").notNull(),
+    generatedByUserId: bigint("generatedByUserId", { mode: "number", unsigned: true }).notNull(),
+    generatedAt: timestamp("generatedAt").defaultNow().notNull(),
+  },
+  (table) => [index("financial_reports_company_period_idx").on(table.companyId, table.period, table.generatedAt)],
+);
+
+/** Explicit fiscal-year locks; period changes are serialized against journal postings by locking the tenant row. */
+export const fiscalPeriods = mysqlTable(
+  "fiscal_periods",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    fiscalYear: int("fiscalYear").notNull(),
+    label: varchar("label", { length: 24 }).notNull(),
+    startDate: date("startDate", { mode: "string" }).notNull(),
+    endDate: date("endDate", { mode: "string" }).notNull(),
+    status: mysqlEnum("status", ["open", "closed"]).default("closed").notNull(),
+    closedByUserId: bigint("closedByUserId", { mode: "number", unsigned: true }),
+    closedAt: timestamp("closedAt"),
+    reopenedByUserId: bigint("reopenedByUserId", { mode: "number", unsigned: true }),
+    reopenedAt: timestamp("reopenedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("fiscal_periods_company_year_uq").on(table.companyId, table.fiscalYear),
+    index("fiscal_periods_company_dates_status_idx").on(table.companyId, table.startDate, table.endDate, table.status),
+  ],
+);
+
+/** Tenant-owned fixed asset register; depreciation remains computed from the saved method and useful life. */
+export const fixedAssets = mysqlTable(
+  "fixed_assets",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    category: varchar("category", { length: 180 }).notNull(),
+    serialNumber: varchar("serialNumber", { length: 120 }).notNull(),
+    description: text("description"),
+    acquisitionDate: date("acquisitionDate", { mode: "string" }),
+    acquisitionValue: decimal("acquisitionValue", { precision: 18, scale: 2 }).notNull(),
+    currencyCode: varchar("currencyCode", { length: 3 }).default("XAF").notNull(),
+    location: varchar("location", { length: 255 }),
+    status: mysqlEnum("status", ["active", "maintenance", "disposed", "out_of_service"]).default("active").notNull(),
+    usefulLifeYears: int("usefulLifeYears"),
+    depreciationMethod: mysqlEnum("depreciationMethod", ["linear", "degressive"]),
+    createdByUserId: bigint("createdByUserId", { mode: "number", unsigned: true }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("fixed_assets_company_serial_uq").on(table.companyId, table.serialNumber),
+    index("fixed_assets_company_status_idx").on(table.companyId, table.status),
+  ],
+);
+
+export type FixedAsset = typeof fixedAssets.$inferSelect;
+
+/** Employee expense claims and approval evidence, isolated per company. */
+export const expenseClaims = mysqlTable(
+  "expense_claims",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    employeeUserId: bigint("employeeUserId", { mode: "number", unsigned: true }).notNull(),
+    description: varchar("description", { length: 255 }).notNull(),
+    amount: decimal("amount", { precision: 18, scale: 2 }).notNull(),
+    currencyCode: varchar("currencyCode", { length: 3 }).notNull(),
+    category: varchar("category", { length: 120 }).notNull(),
+    incurredOn: date("incurredOn", { mode: "string" }).notNull(),
+    notes: text("notes"),
+    status: mysqlEnum("status", ["pending", "approved", "rejected"]).default("pending").notNull(),
+    decisionNote: text("decisionNote"),
+    decidedByUserId: bigint("decidedByUserId", { mode: "number", unsigned: true }),
+    decidedAt: timestamp("decidedAt"),
+    receiptStorageKey: varchar("receiptStorageKey", { length: 512 }),
+    receiptName: varchar("receiptName", { length: 180 }),
+    receiptMimeType: varchar("receiptMimeType", { length: 120 }),
+    receiptSha256: varchar("receiptSha256", { length: 64 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("expense_claims_company_status_date_idx").on(table.companyId, table.status, table.incurredOn),
+    index("expense_claims_employee_date_idx").on(table.companyId, table.employeeUserId, table.incurredOn),
+  ],
+);
+
+export const expenseClaimEvents = mysqlTable(
+  "expense_claim_events",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    claimId: bigint("claimId", { mode: "number", unsigned: true }).notNull(),
+    eventType: varchar("eventType", { length: 40 }).notNull(),
+    actorUserId: bigint("actorUserId", { mode: "number", unsigned: true }).notNull(),
+    detailsJson: text("detailsJson"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [
+    index("expense_claim_events_company_claim_created_idx").on(table.companyId, table.claimId, table.createdAt),
+  ],
+);
+
+/** Atomic per-company sequence for customer orders and delivery notes. */
+export const salesDocumentSequences = mysqlTable(
+  "sales_document_sequences",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    kind: mysqlEnum("kind", ["quote", "order", "delivery", "invoice"]).notNull(),
+    fiscalYear: int("fiscalYear").notNull(),
+    lastValue: int("lastValue").default(0).notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [uniqueIndex("sales_document_sequences_company_kind_year_uq").on(table.companyId, table.kind, table.fiscalYear)],
+);
+
+export const customerInvoiceReminders = mysqlTable(
+  "customer_invoice_reminders",
+  {
+    id: serial("id").primaryKey(),
+    companyId: bigint("companyId", { mode: "number", unsigned: true }).notNull(),
+    invoiceDocumentId: bigint("invoiceDocumentId", { mode: "number", unsigned: true }).notNull(),
+    reminderType: mysqlEnum("reminderType", ["before_due", "on_due", "after_due_7", "after_due_15", "after_due_30", "final"]).notNull(),
+    reminderDate: date("reminderDate", { mode: "string" }).notNull(),
+    status: mysqlEnum("status", ["scheduled", "sent", "failed", "cancelled"]).default("scheduled").notNull(),
+    templateUsed: varchar("templateUsed", { length: 180 }).notNull(),
+    sentAt: timestamp("sentAt"),
+    sentByUserId: bigint("sentByUserId", { mode: "number", unsigned: true }),
+    notes: text("notes"),
+    createdByUserId: bigint("createdByUserId", { mode: "number", unsigned: true }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("customer_invoice_reminders_invoice_type_date_uq").on(table.invoiceDocumentId, table.reminderType, table.reminderDate),
+    index("customer_invoice_reminders_company_date_status_idx").on(table.companyId, table.reminderDate, table.status),
+  ],
+);
 
 // ============================================
 // SAAS — SUBSCRIPTIONS

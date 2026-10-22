@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Plus, CalendarDays } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { useUIStore } from '@/stores/uiStore';
-import { getAll } from '@/lib/db';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, addMonths, subMonths, getDay } from 'date-fns';
+import { addAndNotify, getAll, subscribe } from '@/lib/db';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { CalendarEvent } from '@/types';
 
@@ -13,10 +13,51 @@ export function MarketingCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showEventForm, setShowEventForm] = useState(false);
+  const [events, setEvents] = useState(() => getAll('calendarEvents') as CalendarEvent[]);
+  const [eventDraft, setEventDraft] = useState({ title: '', type: 'social' as CalendarEvent['type'], startDate: '', endDate: '', description: '' });
 
   useEffect(() => { setCurrentPageTitle('Calendrier Éditorial'); }, [setCurrentPageTitle]);
+  useEffect(() => subscribe('calendarEvents', () => setEvents([...(getAll('calendarEvents') as CalendarEvent[])])), []);
 
-  const events = getAll('calendarEvents') as CalendarEvent[];
+  const openEventForm = (date = selectedDate ?? new Date()) => {
+    const start = new Date(date);
+    start.setHours(9, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(end.getHours() + 1);
+    const toLocalInput = (date: Date) => {
+      const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+      return local.toISOString().slice(0, 16);
+    };
+    setEventDraft({ title: '', type: 'social', startDate: toLocalInput(start), endDate: toLocalInput(end), description: '' });
+    setShowEventForm(true);
+  };
+
+  const saveEvent = () => {
+    if (!eventDraft.title.trim() || !eventDraft.startDate || !eventDraft.endDate) {
+      showToast('Renseignez le titre et les deux dates.', 'error');
+      return;
+    }
+    const start = new Date(eventDraft.startDate);
+    const end = new Date(eventDraft.endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+      showToast('La date de fin doit être postérieure à la date de début.', 'error');
+      return;
+    }
+    addAndNotify('calendarEvents', {
+      id: `evt-${crypto.randomUUID()}`,
+      title: eventDraft.title.trim(),
+      type: eventDraft.type,
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+      description: eventDraft.description.trim(),
+      assignees: [],
+      color: eventDraft.type === 'meeting' ? '#1F7A63' : '#1FB472',
+    });
+    setCurrentDate(start);
+    setSelectedDate(start);
+    setShowEventForm(false);
+    showToast('Événement créé.', 'success');
+  };
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
@@ -59,10 +100,10 @@ export function MarketingCalendar() {
             <ChevronRight size={18} className="text-[var(--text-muted)]" />
           </button>
           <button onClick={() => setCurrentDate(new Date())} className="px-3 py-1.5 text-xs bg-[var(--bg-elevated)] rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-            Aujourd'hui
+            Aujourd&apos;hui
           </button>
         </div>
-        <button onClick={() => { setSelectedDate(new Date()); setShowEventForm(true); }} className="btn-primary h-9"><Plus size={16} /> Événement</button>
+        <button onClick={() => { const today = new Date(); setSelectedDate(today); openEventForm(today); }} className="btn-primary h-9"><Plus size={16} /> Événement</button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
@@ -165,16 +206,16 @@ export function MarketingCalendar() {
           <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowEventForm(false)} />
           <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} className="fixed right-0 top-0 bottom-0 w-full max-w-md border-l border-[var(--glass-border)] bg-[var(--bg-card)] z-50 max-h-screen overflow-y-auto shadow-2xl">
             <div className="p-6">
-              <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Nouvel Événement</h2>
+              <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-semibold text-[var(--text-primary)]">Nouvel Événement</h2><button type="button" onClick={() => setShowEventForm(false)} aria-label="Fermer le formulaire" className="p-2 rounded-lg hover:bg-white/5"><X size={18} className="text-[var(--text-muted)]" /></button></div>
               <div className="space-y-3">
-                <div><label className="block text-xs text-[var(--text-secondary)] mb-1">Titre</label><input className="w-full h-9 px-3 glass-input text-sm" placeholder="Titre de l'événement" /></div>
-                <div><label className="block text-xs text-[var(--text-secondary)] mb-1">Type</label><select className="w-full h-9 px-3 glass-input text-sm"><option>Réseau social</option><option>Blog</option><option>Newsletter</option><option>Événement</option><option>Réunion</option></select></div>
+                <div><label htmlFor="calendar-event-title" className="block text-xs text-[var(--text-secondary)] mb-1">Titre</label><input id="calendar-event-title" required maxLength={180} value={eventDraft.title} onChange={event => setEventDraft({ ...eventDraft, title: event.target.value })} className="w-full h-9 px-3 glass-input text-sm" placeholder="Titre de l'événement" /></div>
+                <div><label htmlFor="calendar-event-type" className="block text-xs text-[var(--text-secondary)] mb-1">Type</label><select id="calendar-event-type" value={eventDraft.type} onChange={event => setEventDraft({ ...eventDraft, type: event.target.value as CalendarEvent['type'] })} className="w-full h-9 px-3 glass-input text-sm"><option value="social">Réseau social</option><option value="blog">Blog</option><option value="newsletter">Newsletter</option><option value="event">Événement</option><option value="meeting">Réunion</option></select></div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="block text-xs text-[var(--text-secondary)] mb-1">Date début</label><input type="datetime-local" className="w-full h-9 px-2 glass-input text-sm" /></div>
-                  <div><label className="block text-xs text-[var(--text-secondary)] mb-1">Date fin</label><input type="datetime-local" className="w-full h-9 px-2 glass-input text-sm" /></div>
+                  <div><label htmlFor="calendar-event-start" className="block text-xs text-[var(--text-secondary)] mb-1">Date début</label><input id="calendar-event-start" type="datetime-local" required value={eventDraft.startDate} onChange={event => setEventDraft({ ...eventDraft, startDate: event.target.value })} className="w-full h-9 px-2 glass-input text-sm" /></div>
+                  <div><label htmlFor="calendar-event-end" className="block text-xs text-[var(--text-secondary)] mb-1">Date fin</label><input id="calendar-event-end" type="datetime-local" required value={eventDraft.endDate} onChange={event => setEventDraft({ ...eventDraft, endDate: event.target.value })} className="w-full h-9 px-2 glass-input text-sm" /></div>
                 </div>
-                <div><label className="block text-xs text-[var(--text-secondary)] mb-1">Description</label><textarea className="w-full h-16 p-2 glass-input text-sm resize-none" /></div>
-                <button onClick={() => { showToast('Événement créé', 'success'); setShowEventForm(false); }} className="w-full btn-primary h-10 justify-center">Créer</button>
+                <div><label htmlFor="calendar-event-description" className="block text-xs text-[var(--text-secondary)] mb-1">Description</label><textarea id="calendar-event-description" maxLength={2000} value={eventDraft.description} onChange={event => setEventDraft({ ...eventDraft, description: event.target.value })} className="w-full h-20 p-2 glass-input text-sm resize-y" placeholder="Décrivez l'événement…" /></div>
+                <button type="button" onClick={saveEvent} className="w-full btn-primary h-10 justify-center">Créer</button>
               </div>
             </div>
           </motion.div>

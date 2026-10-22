@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Award, TrendingUp, Target, Star, X, FileText, DollarSign, ChevronRight, Plus, Users, MessageSquare, BookOpen, BarChart3 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { getAll, addAndNotify } from '@/lib/db';
 
@@ -272,7 +271,7 @@ export function PerformancePage() {
                       <p className="text-[10px] text-[var(--text-muted)]">Echeance: {pdp.deadline ? new Date(pdp.deadline).toLocaleDateString('fr-FR') : 'Non definie'}</p>
                     </div>
                   </div>
-                  <StatusBadge status={pdp.status} label={pdp.status === 'completed' ? 'Termine' : 'En cours'} />
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${pdp.status === 'completed' ? 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]' : 'bg-[var(--accent-warning)]/15 text-[var(--accent-warning)]'}`}>{pdp.status === 'completed' ? 'Termine' : 'En cours'}</span>
                 </div>
                 <p className="text-xs text-[var(--text-secondary)] mb-2">{pdp.goal}</p>
                 {pdp.resources && <p className="text-[10px] text-[var(--text-muted)] mb-2">Ressources: {pdp.resources}</p>}

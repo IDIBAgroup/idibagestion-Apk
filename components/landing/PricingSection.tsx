@@ -66,7 +66,7 @@ function PlanDialog({
           <div>
             <dt>Après votre essai</dt>
             <dd>
-              {plan.price.toLocaleString("fr-FR")} FCFA / {plan.billing}
+              {plan.enterprise ? "Sur devis" : `${plan.price.toLocaleString("fr-FR")} FCFA / ${plan.billing}`}
             </dd>
           </div>
         </dl>
@@ -156,9 +156,8 @@ export function PricingSection() {
                   <p>{plan.description}</p>
                 </div>
                 <div className="lp-price">
-                  {plan.enterprise && <small>À partir de</small>}
-                  <strong>{plan.price.toLocaleString("fr-FR")}</strong>
-                  <span>FCFA / {plan.billing}</span>
+                  <strong>{plan.enterprise ? "Sur devis" : plan.price.toLocaleString("fr-FR")}</strong>
+                  {!plan.enterprise && <span>FCFA / {plan.billing}</span>}
                 </div>
                 {plan.enterprise ? (
                   <a

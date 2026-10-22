@@ -38,6 +38,7 @@ export const designPlans: Plan[] = SUBSCRIPTION_PACKS.flatMap((pack, packIndex) 
     maxInvoices: pack.limits.invoices,
     maxProjects: pack.limits.projects,
     features: JSON.stringify(pack.features),
+    moduleAccess: JSON.stringify(pack.modules),
     supportLevel: pack.supportLevel,
     trialDays: 14,
     isActive: true,

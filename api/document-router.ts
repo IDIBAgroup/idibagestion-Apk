@@ -17,6 +17,7 @@ import {
   companyMemberships,
   companies,
   users,
+  type User,
 } from "@db/schema";
 import { createRouter, authedQuery, publicQuery, assertCompanyAccess, assertCompanyManagementAccess } from "./middleware";
 import { getDb } from "./queries/connection";
@@ -24,6 +25,7 @@ import { createPrivateDownloadUrl, deleteStoredDocument, documentServiceCapabili
 import { externalOtpEmailReady, sendExternalAccessCode } from "./documents/email";
 import { getEnvelopeStatus, isDocuSignConfigured, sendEnvelopeForSignature } from "./documents/docusign";
 import { isDesignMode } from "./design-mode";
+import { assertSubscriptionFeature } from "./subscription-quota";
 import {
   createDesignDraft, createDesignTemplate, listDesignDocumentEvents, listDesignDocuments,
   listDesignTemplates, setDesignTemplateStatus, updateDesignDraft, updateDesignTemplate, voidDesignDocument,
@@ -31,6 +33,11 @@ import {
 
 const hashShareToken = (token: string) => createHash("sha256").update(token).digest("hex");
 const hashOtp = (challenge: string, otp: string) => createHash("sha256").update(`${challenge}:${otp}`).digest("hex");
+
+async function assertDocumentCompanyAccess(user: User, companyId: number) {
+  await assertCompanyAccess(user, companyId);
+  await assertSubscriptionFeature(companyId, "documents");
+}
 
 async function findOtpVerifiedShare(token: string, sessionToken: string) {
   if (isDesignMode) throw new TRPCError({ code: "NOT_FOUND", message: "Aucun partage externe n’est disponible dans l’aperçu local." });
@@ -71,7 +78,7 @@ export const documentRouter = createRouter({
   list: authedQuery
     .input(z.object({ companyId: z.number().int().positive(), documentType: z.string().max(80).optional() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) return listDesignDocuments(input.companyId, input.documentType);
       const db = getDb();
       const rows = await db.select({
@@ -106,7 +113,7 @@ export const documentRouter = createRouter({
       templateId: z.number().int().positive().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) {
         if (input.templateId && !listDesignTemplates(input.companyId).some((template) => template.id === input.templateId && template.status === "active")) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Modèle actif introuvable." });
@@ -188,7 +195,7 @@ export const documentRouter = createRouter({
       base64: z.string().min(4).max(Math.ceil(MAX_DOCUMENT_UPLOAD_BYTES * 4 / 3) + 8),
     }))
     .mutation(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (!documentServiceCapabilities().upload) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Configurez le stockage privé et le service antivirus pour téléverser un fichier." });
       if (isDesignMode) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Le téléversement sécurisé n’est pas disponible dans l’aperçu local." });
       const db = getDb();
@@ -325,7 +332,7 @@ export const documentRouter = createRouter({
   downloadFile: authedQuery
     .input(z.object({ companyId: z.number().int().positive(), documentId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) throw new TRPCError({ code: "NOT_FOUND", message: "Aucun fichier téléversé dans l’aperçu local." });
       const [document] = await getDb().select({
         title: businessDocuments.title,
@@ -342,7 +349,7 @@ export const documentRouter = createRouter({
   listVersions: authedQuery
     .input(z.object({ companyId: z.number().int().positive(), documentId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) return [];
       return getDb().select({
         id: businessDocumentVersions.id,
@@ -360,7 +367,7 @@ export const documentRouter = createRouter({
   downloadVersion: authedQuery
     .input(z.object({ companyId: z.number().int().positive(), documentId: z.number().int().positive(), versionId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) throw new TRPCError({ code: "NOT_FOUND", message: "Aucune version téléversée dans l’aperçu local." });
       const [version] = await getDb().select({ storageKey: businessDocumentVersions.storageKey, snapshotJson: businessDocumentVersions.snapshotJson, version: businessDocumentVersions.version }).from(businessDocumentVersions).where(and(
         eq(businessDocumentVersions.id, input.versionId), eq(businessDocumentVersions.companyId, input.companyId), eq(businessDocumentVersions.documentId, input.documentId),
@@ -377,7 +384,7 @@ export const documentRouter = createRouter({
   listDocumentEvents: authedQuery
     .input(z.object({ companyId: z.number().int().positive(), documentId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) return listDesignDocumentEvents(input.companyId, input.documentId);
       return getDb().select({
         id: externalDocumentEvents.id,
@@ -393,7 +400,7 @@ export const documentRouter = createRouter({
   listTemplates: authedQuery
     .input(z.object({ companyId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) return listDesignTemplates(input.companyId);
       const db = getDb();
       const templates = await db.select().from(documentTemplates)
@@ -511,7 +518,7 @@ export const documentRouter = createRouter({
   listSignatures: authedQuery
     .input(z.object({ companyId: z.number().int().positive(), documentId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) return [];
       return getDb().select({
         id: documentSignatureRequests.id,
@@ -535,7 +542,7 @@ export const documentRouter = createRouter({
   listInternalSigners: authedQuery
     .input(z.object({ companyId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) return [{ userId: ctx.user.id, name: ctx.user.name, email: ctx.user.email, role: "owner" as const }];
       const db = getDb();
       const memberships = await db.select({
@@ -560,7 +567,7 @@ export const documentRouter = createRouter({
   listMyInternalSignatures: authedQuery
     .input(z.object({ companyId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) return [];
       const db = getDb();
       const requests = await db.select({
@@ -599,7 +606,7 @@ export const documentRouter = createRouter({
   listSignatureEvents: authedQuery
     .input(z.object({ companyId: z.number().int().positive(), documentId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) return [];
       return getDb().select({
         id: documentSignatureEvents.id,
@@ -665,7 +672,7 @@ export const documentRouter = createRouter({
   signInternalDocument: authedQuery
     .input(z.object({ companyId: z.number().int().positive(), requestId: z.number().int().positive(), acknowledged: z.literal(true) }))
     .mutation(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) throw new TRPCError({ code: "NOT_FOUND", message: "Aucune demande de signature dans l’aperçu local." });
       const db = getDb();
       return db.transaction(async (tx) => {
@@ -695,7 +702,7 @@ export const documentRouter = createRouter({
   declineInternalSignature: authedQuery
     .input(z.object({ companyId: z.number().int().positive(), requestId: z.number().int().positive(), reason: z.string().trim().min(3).max(1000) }))
     .mutation(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) throw new TRPCError({ code: "NOT_FOUND", message: "Aucune demande de signature dans l’aperçu local." });
       const db = getDb();
       return db.transaction(async (tx) => {
@@ -911,7 +918,7 @@ export const documentRouter = createRouter({
   listExternalComments: authedQuery
     .input(z.object({ companyId: z.number().int().positive(), documentId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       if (isDesignMode) return [];
       return getDb().select({
         id: externalDocumentComments.id,
@@ -929,7 +936,7 @@ export const documentRouter = createRouter({
   downloadExternalAttachment: authedQuery
     .input(z.object({ companyId: z.number().int().positive(), documentId: z.number().int().positive(), commentId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await assertCompanyAccess(ctx.user, input.companyId);
+      await assertDocumentCompanyAccess(ctx.user, input.companyId);
       const [comment] = await getDb().select({ storageKey: externalDocumentComments.attachmentStorageKey, fileName: externalDocumentComments.attachmentName })
         .from(externalDocumentComments).where(and(
           eq(externalDocumentComments.id, input.commentId),

@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  MessageSquare, X, Send, Paperclip, Hash, Building2, Briefcase, Globe, Video, Phone,
+  MessageSquare, X, Send, Paperclip, Video, Phone,
   Users, Crown, Trash2, Archive, Reply, CheckCheck, Search, ArrowLeft,
 } from 'lucide-react';
 import { getAll, addAndNotify, updateAndNotify, removeAndNotify, subscribe } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
 import { useUIStore } from '@/stores/uiStore';
 import { useNavigate } from '@/lib/navigation';
+import { getChatPresentation } from '@/lib/chat-presentation';
 import type { Chat, ChatMessage } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -70,14 +71,8 @@ export function ChatBubbles() {
 
   const getInitials = (name = '') => name.trim().split(/\s+/).filter(Boolean).map(part => part[0]).join('').substring(0, 2).toUpperCase() || '?';
   const getChatIcon = (chat: Chat, size = 16) => {
-    if (chat.type === 'external') {
-      if (chat.externalEntityType === 'client') return <Building2 size={size} />;
-      if (chat.externalEntityType === 'vendor') return <Briefcase size={size} />;
-      return <Globe size={size} />;
-    }
-    if (chat.scope === 'department') return <Users size={size} />;
-    if (chat.scope === 'project') return <Briefcase size={size} />;
-    return <Hash size={size} />;
+    const { Icon, iconClassName } = getChatPresentation(chat);
+    return <Icon size={size} className={iconClassName} />;
   };
 
   const handleOpenChat = (chatId: string) => {
@@ -177,7 +172,7 @@ export function ChatBubbles() {
                   return (
                     <button type="button" key={chat.id} onClick={() => handleOpenChat(chat.id)} aria-current={activeChatId === chat.id ? 'true' : undefined}
                       className={cn('w-full flex items-center gap-3 px-3 py-3 text-left rounded-xl transition-colors', activeChatId === chat.id ? 'bg-[var(--accent-primary)]/12' : 'hover:bg-[var(--bg-elevated)]')}>
-                      <span className="relative w-11 h-11 shrink-0 rounded-full bg-[var(--accent-primary)]/12 text-[var(--accent-primary)] flex items-center justify-center">
+                      <span className={cn('relative w-11 h-11 shrink-0 rounded-full flex items-center justify-center', getChatPresentation(chat).avatarClassName)}>
                         {getChatIcon(chat, 18)}
                         <span className="absolute -right-0.5 -bottom-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-[var(--bg-secondary)]" />
                       </span>
@@ -188,7 +183,7 @@ export function ChatBubbles() {
                         </span>
                         <span className="flex items-center justify-between gap-2 mt-1">
                           <span className="truncate text-[11px] text-[var(--text-muted)]">{lastMessage ? `${lastMessage.senderId === user?.uid ? 'Vous : ' : ''}${lastMessage.content}` : chat.lastMessagePreview || chat.description || 'Démarrer la conversation'}</span>
-                          {!!chat.unreadCount && <span className="min-w-5 h-5 px-1 rounded-full bg-[var(--accent-primary)] text-white text-[10px] font-bold flex items-center justify-center">{chat.unreadCount}</span>}
+                          {!!chat.unreadCount && <span className={cn('min-w-5 h-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center', getChatPresentation(chat).unreadClassName)}>{chat.unreadCount}</span>}
                         </span>
                       </span>
                     </button>
@@ -206,7 +201,7 @@ export function ChatBubbles() {
                 <header className="h-[72px] shrink-0 px-3 sm:px-5 flex items-center justify-between gap-3 border-b border-[var(--divider)] bg-[var(--bg-secondary)]">
                   <div className="flex items-center gap-3 min-w-0">
                     <button type="button" onClick={() => setActiveChatId(null)} aria-label="Retour aux conversations" className="sm:hidden p-2 -ml-2 rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]"><ArrowLeft size={19} /></button>
-                    <div className="w-10 h-10 shrink-0 rounded-full bg-[var(--accent-primary)]/12 text-[var(--accent-primary)] flex items-center justify-center">{getChatIcon(activeChat, 18)}</div>
+                    <div className={cn('w-10 h-10 shrink-0 rounded-full flex items-center justify-center', getChatPresentation(activeChat).avatarClassName)}>{getChatIcon(activeChat, 18)}</div>
                     <div className="min-w-0">
                       <h3 className="truncate text-sm font-semibold text-[var(--text-primary)]">{activeChat.name}</h3>
                       <p className="text-[11px] text-[var(--text-muted)] truncate">{activeChat.type === 'external' && activeChat.externalEntityName ? `${activeChat.externalEntityName} · ` : ''}{activeChat.participants.length} participant{activeChat.participants.length > 1 ? 's' : ''}</p>

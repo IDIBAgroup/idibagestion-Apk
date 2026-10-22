@@ -7,7 +7,6 @@ import {
   Check, FileText, Image, XCircle, LayoutTemplate, BarChart3, ArrowRightLeft
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { getAll, addAndNotify } from '@/lib/db';
 
@@ -31,6 +30,15 @@ const toneLabels: Record<string, { label: string; color: string }> = {
   enthusiastic: { label: 'Enthousiaste', color: '#F59E0B' },
   empathetic: { label: 'Empathique', color: '#8B5CF6' },
   urgent: { label: 'Urgent', color: '#EF4444' },
+};
+
+const statusIcons: Record<string, React.ReactNode> = {
+  draft: <Edit3 size={10} />,
+  sent: <Send size={10} />,
+  delivered: <CheckCircle size={10} />,
+  opened: <Eye size={10} />,
+  replied: <MessageSquare size={10} />,
+  bounced: <X size={10} />,
 };
 
 export function VibeOutreachPage() {
@@ -377,7 +385,9 @@ export function VibeOutreachPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-[var(--accent-primary)]">{channelIcons[msg.channel]}</span>
                       <span className="text-xs font-medium text-[var(--text-primary)]">{msg.leadName}</span>
-                      <StatusBadge status={msg.status} />
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 ${msg.status === 'replied' ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : msg.status === 'opened' ? 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]' : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}`}>
+                        {statusIcons[msg.status]} {msg.status}
+                      </span>
                       {msg.aiGenerated && <span className="text-[9px] bg-[var(--accent-purple)]/10 text-[var(--accent-purple)] px-1.5 py-0.5 rounded flex items-center gap-1"><Bot size={8} /> IA</span>}
                     </div>
                     <span className="text-[10px] text-[var(--text-muted)]">{msg.sentAt ? new Date(msg.sentAt).toLocaleDateString('fr-FR') : 'Brouillon'}</span>
@@ -418,7 +428,9 @@ export function VibeOutreachPage() {
                         <h3 className="text-sm font-semibold text-[var(--text-primary)]">{camp.name}</h3>
                         <p className="text-[10px] text-[var(--text-muted)]">{camp.targetAudience}</p>
                       </div>
-                      <StatusBadge status={camp.status} />
+                      <span className={`text-[9px] px-2 py-0.5 rounded ${camp.status === 'running' ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : camp.status === 'completed' ? 'bg-[var(--bg-elevated)] text-[var(--text-muted)]' : 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]'}`}>
+                        {camp.status}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-2 mb-3">
@@ -521,7 +533,7 @@ export function VibeOutreachPage() {
                   <div className="glass-card-compact p-3 border-l-2 border-[var(--accent-primary)]">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-[var(--text-primary)]">Test: Sujet email</span>
-                      <StatusBadge status="running" label="En cours" />
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]">En cours</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="p-2 rounded bg-[var(--bg-elevated)]">
@@ -544,7 +556,7 @@ export function VibeOutreachPage() {
                   <div className="glass-card-compact p-3 border-l-2 border-[var(--accent-warning)]">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-[var(--text-primary)]">Test: CTA bouton</span>
-                      <StatusBadge status="pending" label="Planifie" />
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]">Planifie</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="p-2 rounded bg-[var(--bg-elevated)]">

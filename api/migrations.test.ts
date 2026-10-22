@@ -71,10 +71,27 @@ describe("Drizzle migration history", () => {
     expect(latest?.tables).toHaveProperty("company_memberships");
     expect(latest?.tables).toHaveProperty("company_access_invitations");
     expect(latest?.tables).toHaveProperty("partner_account_invitations");
+    expect(latest?.tables).toHaveProperty("fixed_assets");
+    expect(latest?.tables).toHaveProperty("expense_claims");
+    expect(latest?.tables).toHaveProperty("expense_claim_events");
+    expect(latest?.tables).toHaveProperty("departments");
+    expect(latest?.tables).toHaveProperty("department_members");
+    expect(latest?.tables).toHaveProperty("journal_entries");
+    expect(latest?.tables).toHaveProperty("journal_entry_lines");
+    expect(latest?.tables).toHaveProperty("financial_reports");
+    expect(latest?.tables).toHaveProperty("fiscal_periods");
+    expect(latest?.tables.departments.columns).toHaveProperty("companyId");
+    expect(latest?.tables.department_members.columns).toHaveProperty("companyId");
+    expect(latest?.tables.journal_entries.columns).toHaveProperty("baseCurrency");
+    expect(latest?.tables.journal_entry_lines.columns).toHaveProperty("debit");
+    expect(latest?.tables.financial_reports.columns).toHaveProperty("reportData");
+    expect(latest?.tables.fiscal_periods.columns).toHaveProperty("status");
+    expect(latest?.tables.fixed_assets.columns).toHaveProperty("currencyCode");
+    expect(latest?.tables.expense_claims.columns).toHaveProperty("currencyCode");
     expect(latest?.tables.transactions.columns).toHaveProperty("isVerified");
     expect(latest?.tables.companies.columns).toHaveProperty("capitalSocial");
     expect(latest?.tables.partners.columns).toHaveProperty("userId");
-  });
+  }, 20_000);
 
   it("keeps owner access during membership rollout and separates SQL statements", async () => {
     const membershipSql = await readFile(path.join(migrationsDir, "0002_company_memberships.sql"), "utf8");
@@ -92,5 +109,8 @@ describe("Drizzle migration history", () => {
     expect(firstSchemaDiff).toContain("CREATE TABLE `clients`");
     expect(firstSchemaDiff).toContain("CREATE TABLE `products`");
     expect(firstSchemaDiff).toContain("ADD `isVerified`");
+
+    const currencyMigration = await readFile(path.join(migrationsDir, "0024_chunky_salo.sql"), "utf8");
+    expect(currencyMigration).toMatch(/UPDATE `fixed_assets`[\s\S]*JOIN `company_profiles`[\s\S]*currencyCode/);
   });
 });

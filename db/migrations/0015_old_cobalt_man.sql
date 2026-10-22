@@ -1,0 +1,1 @@
+ALTER TABLE `company_tax_rules` MODIFY COLUMN `taxType` enum('vat','withholding','excise','corporate_income','payroll_income','employee_social','employer_social','other') NOT NULL DEFAULT 'vat';

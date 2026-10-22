@@ -1,14 +1,13 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { GlassCard } from '@/components/shared/GlassCard';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
 import { trpc } from '@/providers/trpc';
 import { useActiveCompany } from '@/hooks/useActiveCompany';
 import {
   CreditCard, Calendar, RefreshCw, ArrowUpRight, ArrowDownRight,
   CheckCircle, AlertTriangle, Clock, Shield, Zap, ChevronRight,
-  X, Loader2, Phone, Building2, Check, Download, FileText, Printer
+  X, Loader2, Phone, Check, Download, FileText, Printer
 } from 'lucide-react';
 
 export function SubscriptionPage() {
@@ -17,7 +16,7 @@ export function SubscriptionPage() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
-  const [paymentMethod, setPaymentMethod] = useState<'mobile_money' | 'card' | 'bank_transfer'>('mobile_money');
+  const [paymentMethod, setPaymentMethod] = useState<'mobile_money' | 'card'>('mobile_money');
   const [paymentPhone, setPaymentPhone] = useState('');
   const [selectedReceiptTx, setSelectedReceiptTx] = useState<any>(null);
 
@@ -59,14 +58,14 @@ export function SubscriptionPage() {
     onError: (err) => showToast(err.message, 'error'),
   });
 
-  const changePlanMutation = trpc.subscription.changePlan.useMutation({
-    onSuccess: () => {
-      showToast('Abonnement mis a jour.', 'success');
-      setShowUpgradeModal(false);
-      setSelectedPlanId(null);
-      utils.subscription.listByCompany.invalidate();
-      utils.subscription.getUsage.invalidate();
-      utils.transaction.listByCompany.invalidate();
+  const changePlanMutation = trpc.subscription.startCheckout.useMutation({
+    onSuccess: (result) => {
+      if (!result.checkoutUrl) {
+        showToast('La session de paiement a été créée, mais le prestataire n’a pas fourni de lien.', 'error');
+        return;
+      }
+      showToast('Paiement en attente de confirmation sécurisée.', 'info');
+      window.location.assign(result.checkoutUrl);
     },
     onError: (err) => showToast(err.message, 'error'),
   });
@@ -95,7 +94,7 @@ export function SubscriptionPage() {
     if (!selectedPlanId || !companyId) return;
     changePlanMutation.mutate({
       companyId,
-      newPlanId: selectedPlanId,
+      planId: selectedPlanId,
       billingCycle,
       paymentMethod,
       paymentPhone,
@@ -290,7 +289,9 @@ export function SubscriptionPage() {
                     <div className="flex items-center gap-4 text-right">
                       <div>
                         <div className="text-xs font-bold text-white font-mono">{formatXAF(tx.amountXAF)}</div>
-                        <StatusBadge status={tx.status === 'completed' && tx.isVerified ? 'completed' : 'pending'} label={tx.status === 'completed' && tx.isVerified ? 'Confirme' : tx.status === 'completed' ? 'A verifier' : tx.status} />
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${tx.status === 'completed' && tx.isVerified ? 'bg-emerald-500/20 text-emerald-700' : 'bg-amber-500/15 text-amber-800'}`}>
+                          {tx.status === 'completed' && tx.isVerified ? 'Confirme' : tx.status === 'completed' ? 'A verifier' : tx.status}
+                        </span>
                       </div>
                       <button
                         onClick={() => setSelectedReceiptTx(tx)}
@@ -351,14 +352,14 @@ export function SubscriptionPage() {
             </div>
 
             {/* PLANS LIST */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
               {plans.map((plan) => {
                 const price = plan.priceXAF;
                 const isSelected = selectedPlanId === plan.id;
                 return (
                   <div
                     key={plan.id}
-                    onClick={() => setSelectedPlanId(plan.id)}
+                    onClick={() => !plan.isEnterprise && setSelectedPlanId(plan.id)}
                     className={`p-4 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
                       isSelected
                         ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 shadow-lg'
@@ -373,8 +374,9 @@ export function SubscriptionPage() {
                       <p className="text-[11px] text-[var(--text-secondary)] mb-3 leading-tight">{plan.description}</p>
                     </div>
                     <div>
-                      <div className="text-lg font-black text-white font-mono">{price.toLocaleString('fr-FR')} FCFA</div>
-                      <div className="text-[10px] text-[var(--text-muted)]">/ {billingCycle === 'yearly' ? 'an' : 'mois'}</div>
+                      <div className="text-lg font-black text-white font-mono">{plan.isEnterprise ? 'Sur devis' : price.toLocaleString('fr-FR') + ' FCFA'}</div>
+                      {!plan.isEnterprise && <div className="text-[10px] text-[var(--text-muted)]">/ {billingCycle === 'yearly' ? 'an' : 'mois'}</div>}
+                      {plan.isEnterprise && <a className="mt-3 inline-flex text-xs font-semibold text-[var(--accent-primary)] underline" href="mailto:contact@idibages.com?subject=Offre%20Enterprise%20IDIBAGES">Contacter notre équipe</a>}
                     </div>
                   </div>
                 );
@@ -390,15 +392,14 @@ export function SubscriptionPage() {
             {/* PAYMENT METHOD SELECTION */}
             <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-4 mb-6">
               <div className="text-xs font-bold text-white">Mode de Règlement (Zone CEMAC)</div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 {[
                   { id: 'mobile_money', label: 'MTN / Orange Money', icon: Phone },
                   { id: 'card', label: 'Carte Visa / Mastercard', icon: CreditCard },
-                  { id: 'bank_transfer', label: 'Virement Bancaire', icon: Building2 },
                 ].map((pm) => (
                   <button
                     key={pm.id}
-                    onClick={() => setPaymentMethod(pm.id as any)}
+                    onClick={() => setPaymentMethod(pm.id as 'mobile_money' | 'card')}
                     className={`p-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
                       paymentMethod === pm.id
                         ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/20 text-white'

@@ -9,8 +9,9 @@ import { GlassCard } from '@/components/shared/GlassCard';
 import { useUIStore } from '@/stores/uiStore';
 import { trpc } from '@/providers/trpc';
 import { useActiveCompany } from '@/hooks/useActiveCompany';
-import { getAll, addAndNotify, removeAndNotify } from '@/lib/db';
 import { formatPlatformCurrency, usePlatformFinancialSettings } from '@/hooks/usePlatformFinancialSettings';
+import { getOhadaCountry } from '@/lib/ohada/countries';
+import type { Quote } from '@/types';
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   draft: { label: 'Brouillon', color: '#6B7280', icon: <FileText size={10} /> },
@@ -21,9 +22,13 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
   expired: { label: 'Expiré', color: '#F59E0B', icon: <Clock size={10} /> },
   converted: { label: 'Converti en Facture', color: '#8B5CF6', icon: <ArrowRight size={10} /> },
 };
+const quoteStatusTransitions: Record<string, string[]> = {
+  draft: ['sent', 'rejected', 'expired'], sent: ['accepted', 'rejected', 'expired', 'counter_proposal'],
+  counter_proposal: ['accepted', 'rejected'],
+};
 
 export function DevisPage() {
-  const { currency, taxRate } = usePlatformFinancialSettings();
+  const { currency, taxRate, taxConfigured, countryCode } = usePlatformFinancialSettings();
   const { setCurrentPageTitle, showToast } = useUIStore();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -40,10 +45,36 @@ export function DevisPage() {
     notes: '',
     items: [{ productId: '', description: '', quantity: 1, unitPrice: 0 }],
   });
-  const [refresh, setRefresh] = useState(0);
-
   // tRPC & Local Data
-  const { companyId } = useActiveCompany();
+  const { companyId, company } = useActiveCompany();
+  const companyJurisdiction = getOhadaCountry(countryCode);
+  const utils = trpc.useUtils();
+  const quotesQuery = trpc.salesDocument.list.useQuery({ companyId: companyId ?? 0 }, { enabled: Boolean(companyId) });
+  const invalidateQuotes = () => utils.salesDocument.list.invalidate({ companyId: companyId ?? 0 });
+  const saveQuote = trpc.salesDocument.save.useMutation({
+    onSuccess: async () => {
+      await invalidateQuotes();
+      setShowForm(false);
+      setNewQuote({ clientId: '', clientName: '', clientEmail: '', clientNiu: '', clientRccm: '', date: new Date().toISOString().split('T')[0], expiryDate: '', notes: '', items: [{ productId: '', description: '', quantity: 1, unitPrice: 0 }] });
+      showToast('Devis enregistré.', 'success');
+    },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const setQuoteStatus = trpc.salesDocument.setStatus.useMutation({
+    onSuccess: async () => { await invalidateQuotes(); showToast('Statut du devis mis à jour.', 'success'); },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const deleteQuote = trpc.salesDocument.delete.useMutation({
+    onSuccess: async () => { await invalidateQuotes(); showToast('Devis supprimé.', 'success'); },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const convertQuote = trpc.salesDocument.convertQuoteToInvoice.useMutation({
+    onSuccess: async (invoice) => {
+      await invalidateQuotes();
+      showToast(`Facture ${invoice.number} créée en brouillon.`, 'success');
+    },
+    onError: (error) => showToast(error.message, 'error'),
+  });
   const { data: registeredClients } = trpc.customer.listByCompany.useQuery(
     { companyId: companyId ?? 0 }, { enabled: !!companyId },
   );
@@ -51,33 +82,17 @@ export function DevisPage() {
     { companyId: companyId ?? 0 }, { enabled: !!companyId },
   );
 
-  const DEFAULT_CLIENTS = [
-    { id: 1, name: 'Société Générale Cameroun', email: 'compta@sgc.cm', niu: 'M0123456789P', rccm: 'RC/DLA/1998/A/001' },
-    { id: 2, name: 'MTN Cameroun S.A.', email: 'billing@mtn.cm', niu: 'M08191244901A', rccm: 'RC/DLA/2000/B/042' },
-    { id: 3, name: 'Groupe SABC S.A.', email: 'finances@sabc.cm', niu: 'M0298124901B', rccm: 'RC/DLA/1970/A/008' },
-  ];
+  const dbClients = registeredClients ?? [];
+  const dbProducts = registeredProducts ?? [];
 
-  const DEFAULT_PRODUCTS = [
-    { id: 1, name: 'Développement d\'Application Web ERP', unitPriceHT: 4500000, category: 'Informatique' },
-    { id: 2, name: 'Audit Comptable & DSF SYSCOHADA', unitPriceHT: 2500000, category: 'Conseil' },
-    { id: 3, name: 'Module Prospection VIBE AI Intégré', unitPriceHT: 1200000, category: 'Logiciel' },
-  ];
-
-  const dbClients = getAll('clients') || [];
-  const dbProducts = getAll('products') || [];
-
-  const clientList = dbClients.length > 0 
-    ? dbClients.map((c: any) => ({ id: c.id, name: c.name, email: c.email, niu: c.ifu || c.niu || 'M08191244901A', rccm: c.rccm || 'RC/DLA/2019/B/1420' }))
-    : ((registeredClients && registeredClients.length > 0) ? registeredClients : DEFAULT_CLIENTS);
-
-  const productList = dbProducts.length > 0
-    ? dbProducts
-    : ((registeredProducts && registeredProducts.length > 0) ? registeredProducts : DEFAULT_PRODUCTS);
+  const clientList = dbClients;
+  const productList = dbProducts;
 
   useEffect(() => { setCurrentPageTitle('Gestion des Devis'); }, [setCurrentPageTitle]);
 
-  const quotes = getAll('quotes');
+  const quotes = ((quotesQuery.data ?? []).filter((document) => document.kind === 'quote')) as unknown as Quote[];
   const formatXAF = (a: number) => formatPlatformCurrency(a, currency);
+  const formatDate = (value: string) => new Intl.DateTimeFormat(companyJurisdiction?.locale ?? 'fr-FR').format(new Date(`${value}T00:00:00`));
   const currentTaxMultiplier = 1 + taxRate / 100;
 
   const filtered = quotes.filter((q: any) => {
@@ -94,8 +109,8 @@ export function DevisPage() {
         clientId: String(found.id),
         clientName: found.name,
         clientEmail: found.email || '',
-        clientNiu: found.niu || 'M08191244901A',
-        clientRccm: found.rccm || 'RC/DLA/2019/B/1420',
+        clientNiu: found.niu || '',
+        clientRccm: found.rccm || '',
       });
     }
   };
@@ -121,67 +136,40 @@ export function DevisPage() {
   };
 
   const calculateTotals = () => {
-    const amount = newQuote.items.reduce((s, item) => s + (item.quantity * item.unitPrice), 0);
-    const tax = amount * taxRate / 100;
+    const amount = newQuote.items.reduce((s, item) => s + Math.round(item.quantity * item.unitPrice), 0);
+    const tax = newQuote.items.reduce((s, item) => s + Math.round(Math.round(item.quantity * item.unitPrice) * taxRate / 100), 0);
     return { amount, tax, total: amount + tax };
   };
 
   const handleCreate = () => {
-    if (!newQuote.clientName || newQuote.items.length === 0 || !newQuote.items[0].description) {
-      showToast('Veuillez remplir le client et au moins une ligne', 'warning');
+    if (!companyId) {
+      showToast('Sélectionnez une entreprise active avant de créer un devis.', 'warning');
       return;
     }
-    const { amount, tax, total } = calculateTotals();
-    const taxMultiplier = 1 + taxRate / 100;
-    const quote = {
-      id: `q-${Date.now()}`,
-      number: `DEV-2026-${String(quotes.length + 102).padStart(4, '0')}`,
-      clientName: newQuote.clientName,
-      clientEmail: newQuote.clientEmail,
-      clientNiu: newQuote.clientNiu || 'M08191244901A',
-      clientRccm: newQuote.clientRccm || 'RC/DLA/2019/B/1420',
+    if (!newQuote.clientName.trim() || !newQuote.items.some((item) => item.description.trim() && Number(item.quantity) > 0)) {
+      showToast('Veuillez renseigner le client et au moins une ligne valide.', 'warning');
+      return;
+    }
+    const defaultExpiry = new Date(`${newQuote.date}T00:00:00.000Z`);
+    defaultExpiry.setUTCDate(defaultExpiry.getUTCDate() + 30);
+    saveQuote.mutate({
+      companyId, kind: 'quote', clientId: newQuote.clientId || undefined,
+      clientName: newQuote.clientName.trim(), clientEmail: newQuote.clientEmail.trim(),
+      clientNiu: newQuote.clientNiu.trim() || undefined, clientRccm: newQuote.clientRccm.trim() || undefined,
       date: newQuote.date,
-      expiryDate: newQuote.expiryDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-      amount,
-      tax,
-      total,
-      status: 'draft',
-      companyId: 'comp-1',
-      items: newQuote.items.map(item => ({
-        description: item.description,
-        quantity: Number(item.quantity),
-        unitPrice: Number(item.unitPrice),
-        tax: item.quantity * item.unitPrice * taxRate / 100,
-        total: item.quantity * item.unitPrice * taxMultiplier,
-      })),
-      notes: newQuote.notes,
-      createdAt: new Date().toISOString(),
-    };
-    addAndNotify('quotes', quote);
-    setShowForm(false);
-    setNewQuote({ clientId: '', clientName: '', clientEmail: '', clientNiu: '', clientRccm: '', date: new Date().toISOString().split('T')[0], expiryDate: '', notes: '', items: [{ productId: '', description: '', quantity: 1, unitPrice: 0 }] });
-    setRefresh(r => r + 1);
-    showToast('Devis créé avec succès avec informations NIU & RCCM', 'success');
+      expiryDate: newQuote.expiryDate || defaultExpiry.toISOString().split('T')[0],
+      items: newQuote.items.filter((item) => item.description.trim() && Number(item.quantity) > 0).map((item) => ({ productId: item.productId || undefined, description: item.description.trim(), quantity: Number(item.quantity), unitPrice: Number(item.unitPrice) })),
+      notes: newQuote.notes.trim() || undefined,
+    });
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Supprimer ce devis ?')) {
-      removeAndNotify('quotes', id, 'id');
-      setRefresh(r => r + 1);
-      showToast('Devis supprimé', 'success');
-    }
+    if (companyId && confirm('Supprimer ce devis ?')) deleteQuote.mutate({ companyId, id, kind: 'quote' });
   };
 
   const handleStatusChange = (id: string, newStatus: string) => {
-    const db = JSON.parse(localStorage.getItem('idibages_db_v3') || '{}');
-    if (db.quotes) {
-      db.quotes = db.quotes.map((q: any) => q.id === id ? { ...q, status: newStatus } : q);
-      localStorage.setItem('idibages_db_v3', JSON.stringify(db));
-      setRefresh(r => r + 1);
-      showToast(`Statut mis à jour : ${statusConfig[newStatus]?.label || newStatus}`, 'success');
-    }
+    if (companyId) setQuoteStatus.mutate({ companyId, id, kind: 'quote', status: newStatus });
   };
-
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -192,6 +180,8 @@ export function DevisPage() {
         </div>
         <button onClick={() => setShowForm(true)} className="btn-primary h-9 gap-1.5"><Plus size={16} /> Nouveau Devis</button>
       </div>
+
+      {quotesQuery.isError && <div role="alert" className="flex items-center justify-between gap-3 rounded border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600"><span>Impossible de charger les devis.</span><button type="button" onClick={() => quotesQuery.refetch()} className="underline">Réessayer</button></div>}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
@@ -224,30 +214,33 @@ export function DevisPage() {
             <tbody>
               {filtered.map((q: any) => {
                 const sc = statusConfig[q.status] || statusConfig.draft;
+                const allowedStatuses = [q.status, ...(quoteStatusTransitions[q.status] ?? [])];
                 return (
                   <tr key={q.id} className="border-b border-[var(--divider)]/50 hover:bg-white/[0.02] transition-colors">
                     <td className="p-3"><span className="text-sm font-medium text-[var(--text-primary)]">{q.number}</span></td>
                     <td className="p-3">
                       <p className="text-[var(--text-primary)] font-bold">{q.clientName}</p>
-                      <p className="text-[10px] text-[var(--text-muted)] font-mono">NIU: {q.clientNiu || 'M08191244901A'} • RCCM: {q.clientRccm || 'RC/DLA/2019/B/1420'}</p>
+                      <p className="text-[10px] text-[var(--text-muted)] font-mono">NIU: {q.clientNiu || '—'} • RCCM: {q.clientRccm || '—'}</p>
                     </td>
-                    <td className="p-3 text-[var(--text-muted)]">{new Date(q.date).toLocaleDateString('fr-FR')}</td>
-                    <td className="p-3 text-[var(--text-muted)]">{new Date(q.expiryDate).toLocaleDateString('fr-FR')}</td>
+                    <td className="p-3 text-[var(--text-muted)]">{formatDate(q.date)}</td>
+                    <td className="p-3 text-[var(--text-muted)]">{q.expiryDate ? formatDate(q.expiryDate) : '—'}</td>
                     <td className="p-3 text-right font-bold text-[var(--text-primary)]">{formatXAF(q.total)}</td>
                     <td className="p-3">
                       <select
                         value={q.status}
+                        disabled={setQuoteStatus.isPending}
                         onChange={e => handleStatusChange(q.id, e.target.value)}
                         className="text-[10px] px-2 py-1 rounded border-0 font-bold cursor-pointer"
                         style={{ backgroundColor: sc.color + '20', color: sc.color }}
                       >
-                        {Object.entries(statusConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                        {Object.entries(statusConfig).filter(([key]) => allowedStatuses.includes(key)).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                       </select>
                     </td>
                     <td className="p-3">
                       <div className="flex items-center justify-center gap-1">
                         <button onClick={() => setShowDetail(q)} className="p-1.5 rounded hover:bg-white/5 text-[var(--text-muted)]" title="Visualiser"><Eye size={14} /></button>
-                        <button onClick={() => handleDelete(q.id)} className="p-1.5 rounded hover:bg-white/5 text-[var(--accent-danger)]" title="Supprimer"><Trash2 size={14} /></button>
+                        {q.status === 'accepted' && <button disabled={convertQuote.isPending} onClick={() => companyId && convertQuote.mutate({ companyId, quoteId: q.id })} className="p-1.5 rounded hover:bg-white/5 text-[var(--accent-primary)] disabled:opacity-40" title="Créer une facture brouillon à partir de ce devis"><FileText size={14} /></button>}
+                        <button disabled={deleteQuote.isPending || !['draft', 'rejected', 'expired'].includes(q.status)} onClick={() => handleDelete(q.id)} className="p-1.5 rounded hover:bg-white/5 text-[var(--accent-danger)] disabled:cursor-not-allowed disabled:opacity-30" title="Supprimer"><Trash2 size={14} /></button>
                       </div>
                     </td>
                   </tr>
@@ -294,15 +287,15 @@ export function DevisPage() {
                     >
                       <option value="">-- Sélectionner un client enregistré --</option>
                       {clientList.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.niu || 'M08191244901A'})</option>
+                        <option key={c.id} value={c.id}>{c.name} ({c.niu || '—'})</option>
                       ))}
                     </select>
 
                     <div className="grid grid-cols-2 gap-3 pt-1">
                       <div><label className="block text-[10px] text-[var(--text-muted)] mb-1">Raison Sociale / Nom</label><input value={newQuote.clientName} onChange={e => setNewQuote({ ...newQuote, clientName: e.target.value })} className="w-full h-9 px-3 glass-input text-xs" placeholder="Nom du client" /></div>
-                      <div><label className="block text-[10px] text-[var(--text-muted)] mb-1">Email Client</label><input value={newQuote.clientEmail} onChange={e => setNewQuote({ ...newQuote, clientEmail: e.target.value })} className="w-full h-9 px-3 glass-input text-xs" placeholder="email@client.cm" /></div>
-                      <div><label className="block text-[10px] text-[var(--text-muted)] mb-1">NIU (Identifiant Unique)</label><input value={newQuote.clientNiu} onChange={e => setNewQuote({ ...newQuote, clientNiu: e.target.value })} className="w-full h-9 px-3 glass-input text-xs font-mono" placeholder="M08191244901A" /></div>
-                      <div><label className="block text-[10px] text-[var(--text-muted)] mb-1">RCCM (Registre Commerce)</label><input value={newQuote.clientRccm} onChange={e => setNewQuote({ ...newQuote, clientRccm: e.target.value })} className="w-full h-9 px-3 glass-input text-xs font-mono" placeholder="RC/DLA/2019/B/1420" /></div>
+                      <div><label className="block text-[10px] text-[var(--text-muted)] mb-1">Email Client</label><input value={newQuote.clientEmail} onChange={e => setNewQuote({ ...newQuote, clientEmail: e.target.value })} className="w-full h-9 px-3 glass-input text-xs" placeholder="client@example.com" /></div>
+                      <div><label className="block text-[10px] text-[var(--text-muted)] mb-1">{companyJurisdiction?.taxIdLabel ?? 'Identifiant fiscal'}</label><input value={newQuote.clientNiu} onChange={e => setNewQuote({ ...newQuote, clientNiu: e.target.value })} className="w-full h-9 px-3 glass-input text-xs font-mono" placeholder="Identifiant fiscal du client" /></div>
+                      <div><label className="block text-[10px] text-[var(--text-muted)] mb-1">{companyJurisdiction?.commercialRegisterLabel ?? 'Registre commercial'}</label><input value={newQuote.clientRccm} onChange={e => setNewQuote({ ...newQuote, clientRccm: e.target.value })} className="w-full h-9 px-3 glass-input text-xs font-mono" placeholder="Registre commercial du client" /></div>
                     </div>
                   </div>
 
@@ -329,7 +322,7 @@ export function DevisPage() {
                               >
                                 <option value="">-- Sélectionner produit/article --</option>
                                 {productList.map((p) => (
-                                  <option key={p.id} value={p.id}>{p.name} ({p.unitPriceHT.toLocaleString('fr-FR')} FCFA)</option>
+                          <option key={p.id} value={p.id}>{p.name} ({formatXAF(p.unitPriceHT)})</option>
                                 ))}
                               </select>
                             </div>
@@ -353,9 +346,10 @@ export function DevisPage() {
                   {/* Totals */}
                   <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-1.5 text-xs">
                     <div className="flex justify-between text-[var(--text-secondary)]"><span>Total HT :</span><span className="font-mono text-white">{formatXAF(calculateTotals().amount)}</span></div>
-                    <div className="flex justify-between text-[var(--text-secondary)]"><span>TVA ({taxRate}%) :</span><span className="font-mono text-white">{formatXAF(calculateTotals().tax)}</span></div>
+                    <div className="flex justify-between text-[var(--text-secondary)]"><span>{taxConfigured ? `TVA (${taxRate}%) :` : 'TVA non configurée :'}</span><span className="font-mono text-white">{formatXAF(calculateTotals().tax)}</span></div>
                     <div className="pt-2.5 border-t border-white/10 flex justify-between text-sm font-bold text-white"><span>Total TTC :</span><span className="font-mono text-[var(--accent-primary)] text-base">{formatXAF(calculateTotals().total)}</span></div>
                   </div>
+                  {!taxConfigured && <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">Aucune règle de TVA en vigueur n’est configurée pour le pays et la date de ce devis. Le calcul est effectué sans TVA. <a href="/settings" className="underline underline-offset-2">Configurer la fiscalité</a>.</p>}
 
                   <div><label className="block text-xs text-[var(--text-secondary)] mb-1.5">Notes & Conditions Particulières</label><textarea value={newQuote.notes} onChange={e => setNewQuote({ ...newQuote, notes: e.target.value })} className="w-full h-20 px-3 py-2 glass-input text-xs resize-none" placeholder="Modalités de paiement, acompte exigé..." /></div>
 
@@ -398,18 +392,18 @@ export function DevisPage() {
                   {/* Company Header */}
                   <div className="flex justify-between items-start border-b border-gray-300 pb-5">
                     <div>
-                      <h2 className="text-xl font-bold text-blue-900 tracking-tight">IDIBA GROUP SARL</h2>
-                      <p className="text-xs text-gray-600 font-medium mt-0.5">Ingénierie Logicielle & Conseil de Gestion</p>
-                      <p className="text-xs text-gray-600">Douala & Yaoundé, Cameroun • Contact: contact@idibagroup.cm</p>
+                       <h2 className="text-xl font-bold text-blue-900 tracking-tight">{company?.name || 'Entreprise'}</h2>
+                       <p className="text-xs text-gray-600 font-medium mt-0.5">{company?.address || ''}</p>
+                       <p className="text-xs text-gray-600">{[company?.city, company?.country, company?.email].filter(Boolean).join(' · ')}</p>
                       <p className="text-[11px] text-gray-700 font-mono mt-1">
-                        <strong>NIU:</strong> M0123456789C • <strong>RCCM:</strong> RC/DLA/2019/M/0847 • <strong>Capital:</strong> 10 000 000 FCFA
+                         <strong>{companyJurisdiction?.taxIdLabel ?? 'Identifiant fiscal'}:</strong> {company?.niu || company?.taxId || '—'} • <strong>{companyJurisdiction?.commercialRegisterLabel ?? 'Registre commercial'}:</strong> {company?.rccm || '—'}
                       </p>
                     </div>
                     <div className="text-right">
                       <span className="bg-blue-900 text-white font-bold text-xs px-3 py-1 rounded inline-block tracking-wider uppercase">DEVIS COMMERCIAL</span>
                       <p className="text-xs text-gray-800 font-mono font-bold mt-2">N° {showDetail.number}</p>
-                      <p className="text-xs text-gray-600">Date d'émission: {new Date(showDetail.date).toLocaleDateString('fr-FR')}</p>
-                      {showDetail.expiryDate && <p className="text-xs text-gray-600">Valide jusqu'au: {new Date(showDetail.expiryDate).toLocaleDateString('fr-FR')}</p>}
+                      <p className="text-xs text-gray-600">Date d'émission: {formatDate(showDetail.date)}</p>
+                      {showDetail.expiryDate && <p className="text-xs text-gray-600">Valide jusqu'au: {formatDate(showDetail.expiryDate)}</p>}
                     </div>
                   </div>
 
@@ -417,17 +411,17 @@ export function DevisPage() {
                   <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
                     <div>
                       <span className="text-[10px] uppercase font-bold text-gray-500 block mb-1">Émetteur</span>
-                      <p className="text-xs font-bold text-gray-900">IDIBA GROUP SARL</p>
-                      <p className="text-xs text-gray-600">Département Commercial</p>
-                      <p className="text-xs text-gray-600">Cameroun</p>
+                       <p className="text-xs font-bold text-gray-900">{company?.name || 'Entreprise'}</p>
+                       <p className="text-xs text-gray-600">{company?.address || ''}</p>
+                       <p className="text-xs text-gray-600">{company?.country || companyJurisdiction?.name || ''}</p>
                     </div>
                     <div>
                       <span className="text-[10px] uppercase font-bold text-blue-900 block mb-1">Destinataire (Client)</span>
                       <p className="text-sm font-bold text-gray-900">{showDetail.clientName}</p>
                       <p className="text-xs text-gray-600">{showDetail.clientEmail}</p>
                       <div className="mt-1 pt-1 border-t border-gray-200 text-xs font-mono text-gray-700">
-                        <p><strong>NIU Client:</strong> {showDetail.clientNiu || 'M08191244901A'}</p>
-                        <p><strong>RCCM Client:</strong> {showDetail.clientRccm || 'RC/DLA/2019/B/1420'}</p>
+                         <p><strong>{companyJurisdiction?.taxIdLabel ?? 'Identifiant fiscal'} client:</strong> {showDetail.clientNiu || '—'}</p>
+                         <p><strong>{companyJurisdiction?.commercialRegisterLabel ?? 'Registre commercial'} client:</strong> {showDetail.clientRccm || '—'}</p>
                       </div>
                     </div>
                   </div>
@@ -438,8 +432,8 @@ export function DevisPage() {
                       <tr className="bg-blue-900 text-white text-[11px] uppercase tracking-wider">
                         <th className="text-left p-3 rounded-tl">Réf / Désignation</th>
                         <th className="text-center p-3">Quantité</th>
-                        <th className="text-right p-3">P.U. HT (FCFA)</th>
-                        <th className="text-right p-3 rounded-tr">Montant HT (FCFA)</th>
+                        <th className="text-right p-3">P.U. HT ({currency})</th>
+                        <th className="text-right p-3 rounded-tr">Montant HT ({currency})</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -464,14 +458,14 @@ export function DevisPage() {
                         </div>
                       )}
                       <div className="text-[10px] text-gray-500 space-y-0.5">
-                        <p>• Offre valable 30 jours à compter de la date d'émission.</p>
+                        <p>• Offre valable jusqu'au {showDetail.expiryDate ? formatDate(showDetail.expiryDate) : '—'}.</p>
                         <p>• Paiement par Virement Bancaire ou Mobile Money (MTN / Orange).</p>
                       </div>
                     </div>
                     <div className="col-span-5">
                       <div className="space-y-1.5 text-xs bg-gray-50 p-4 rounded-lg border border-gray-200">
                         <div className="flex justify-between text-gray-700"><span>Montant Total HT :</span><span className="font-mono font-semibold">{formatXAF(showDetail.amount || (showDetail.total / currentTaxMultiplier))}</span></div>
-                        <div className="flex justify-between text-gray-700"><span>TVA ({taxRate}%) :</span><span className="font-mono font-semibold">{formatXAF(showDetail.tax || (showDetail.total - (showDetail.total / currentTaxMultiplier)))}</span></div>
+                        <div className="flex justify-between text-gray-700"><span>{taxConfigured ? `TVA (${taxRate}%) :` : 'TVA non configurée :'}</span><span className="font-mono font-semibold">{formatXAF(showDetail.tax || (showDetail.total - (showDetail.total / currentTaxMultiplier)))}</span></div>
                         <div className="flex justify-between font-bold text-sm text-blue-900 pt-2 border-t border-gray-300"><span>NET À PAYER TTC :</span><span className="font-mono">{formatXAF(showDetail.total)}</span></div>
                       </div>
                     </div>
@@ -480,8 +474,8 @@ export function DevisPage() {
 
                 {/* Footer Legal Notice */}
                 <div className="pt-8 border-t border-gray-300 text-center text-[10px] text-gray-500 space-y-1">
-                  <p className="font-semibold text-gray-700">IDIBA GROUP SARL — S.A.R.L au capital de 10 000 000 FCFA</p>
-                  <p>Siège social: Douala - Cameroun • NIU: M0123456789C • RCCM: RC/DLA/2019/M/0847</p>
+                  <p className="font-semibold text-gray-700">{company?.name || 'Entreprise'}</p>
+                  <p>{[company?.address, company?.city, company?.country].filter(Boolean).join(' · ')} · {companyJurisdiction?.taxIdLabel ?? 'Identifiant fiscal'}: {company?.niu || company?.taxId || '—'} · {companyJurisdiction?.commercialRegisterLabel ?? 'Registre commercial'}: {company?.rccm || '—'}</p>
                   <p className="italic">Document généré automatiquement par IDIBAGES ERP - Format A4 Conforme DGI/SYSCOHADA</p>
                 </div>
               </div>

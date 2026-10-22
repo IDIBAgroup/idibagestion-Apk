@@ -2,16 +2,16 @@ import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Download, Eye, Send, Trash2, X, FileText,
-  Bell, Clock, CheckCircle, AlertTriangle, Calendar, Mail,
-  ChevronRight, Play, Pause, Settings, Printer
+  Bell, CheckCircle, AlertTriangle, Printer
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useUIStore } from '@/stores/uiStore';
-import { getAll, addAndNotify, updateAndNotify } from '@/lib/db';
 import { useEffect } from 'react';
 import type { Invoice, InvoiceReminder } from '@/types';
 import { formatPlatformCurrency, usePlatformFinancialSettings } from '@/hooks/usePlatformFinancialSettings';
+import { getOhadaCountry } from '@/lib/ohada/countries';
+import { trpc } from '@/providers/trpc';
+import { useActiveCompany } from '@/hooks/useActiveCompany';
 
 const REMINDER_TEMPLATES = [
   { key: 'before_due', label: 'Avant échéance', days: -3 },
@@ -37,35 +37,86 @@ const createInvoiceLine = (): InvoiceLineDraft => ({
 });
 
 export function InvoicesPage() {
-  const { currency, taxRate } = usePlatformFinancialSettings();
+  const { currency, taxRate, taxConfigured, countryCode } = usePlatformFinancialSettings();
+  const companyJurisdiction = getOhadaCountry(countryCode);
   const { setCurrentPageTitle, showToast } = useUIStore();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'invoices' | 'reminders'>('invoices');
   const [showDrawer, setShowDrawer] = useState(false);
-  const [invoiceRevision, setInvoiceRevision] = useState(0);
+  const [invoiceClientId, setInvoiceClientId] = useState('');
   const [invoiceClientName, setInvoiceClientName] = useState('');
+  const [invoiceClientEmail, setInvoiceClientEmail] = useState('');
+  const [invoiceClientNiu, setInvoiceClientNiu] = useState('');
+  const [invoiceClientRccm, setInvoiceClientRccm] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [invoiceDueDate, setInvoiceDueDate] = useState('');
   const [invoiceNotes, setInvoiceNotes] = useState('');
   const [invoiceLines, setInvoiceLines] = useState<InvoiceLineDraft[]>([createInvoiceLine()]);
-  const [invoiceTaxEnabled, setInvoiceTaxEnabled] = useState(true);
+  const [invoiceTaxEnabled, setInvoiceTaxEnabled] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderInvoice, setReminderInvoice] = useState<Invoice | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState('after_due_7');
   const [reminderDate, setReminderDate] = useState('');
-  const [autoReminders, setAutoReminders] = useState(true);
   const [showStampAndSignature, setShowStampAndSignature] = useState(true);
-  const [editingDraft, setEditingDraft] = useState<Invoice | null>(null);
+  const { companyId, company } = useActiveCompany();
+  const utils = trpc.useUtils();
+  const invoiceQuery = trpc.salesDocument.list.useQuery({ companyId: companyId ?? 0 }, { enabled: Boolean(companyId) });
+  const clientQuery = trpc.customer.listByCompany.useQuery({ companyId: companyId ?? 0 }, { enabled: Boolean(companyId) });
+  const reminderQuery = trpc.invoiceReminder.list.useQuery({ companyId: companyId ?? 0 }, { enabled: Boolean(companyId) });
+  const registeredClients = clientQuery.data ?? [];
+  const invoiceMutation = trpc.salesDocument.save.useMutation({
+    onSuccess: async (_invoice, variables) => {
+      await utils.salesDocument.list.invalidate({ companyId: variables.companyId });
+      setShowDrawer(false);
+      setInvoiceClientId(''); setInvoiceClientName(''); setInvoiceClientEmail(''); setInvoiceClientNiu(''); setInvoiceClientRccm('');
+      setInvoiceDate(new Date().toISOString().slice(0, 10)); setInvoiceDueDate(''); setInvoiceNotes('');
+      setInvoiceLines([createInvoiceLine()]);
+      showToast(variables.initialStatus === 'draft' ? 'Brouillon de facture enregistré.' : 'Facture émise avec succès.', 'success');
+    },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const invoiceStatusMutation = trpc.salesDocument.setStatus.useMutation({
+    onSuccess: async (_result, variables) => {
+      await utils.salesDocument.list.invalidate({ companyId: variables.companyId });
+      setSelectedInvoice((current) => current?.id === variables.id ? { ...current, status: variables.status as Invoice['status'] } : current);
+      showToast('Statut de la facture mis à jour.', 'success');
+    },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const scheduleReminderMutation = trpc.invoiceReminder.schedule.useMutation({
+    onSuccess: async (_reminder, variables) => {
+      await utils.invoiceReminder.list.invalidate({ companyId: variables.companyId });
+      setShowReminderModal(false); setReminderInvoice(null); setReminderDate('');
+      showToast('Relance programmée.', 'success');
+    },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const generateRemindersMutation = trpc.invoiceReminder.generateForOverdue.useMutation({
+    onSuccess: async ({ count }) => {
+      if (companyId) await utils.invoiceReminder.list.invalidate({ companyId });
+      showToast(`${count} relance(s) programmée(s) pour les factures en retard.`, 'success');
+    },
+    onError: (error) => showToast(error.message, 'error'),
+  });
+  const reminderStatusMutation = trpc.invoiceReminder.setStatus.useMutation({
+    onSuccess: async (_result, variables) => {
+      await utils.invoiceReminder.list.invalidate({ companyId: variables.companyId });
+      showToast(variables.status === 'sent' ? 'Envoi confirmé et journalisé.' : 'État de la relance mis à jour.', 'success');
+    },
+    onError: (error) => showToast(error.message, 'error'),
+  });
 
   useEffect(() => { setCurrentPageTitle('Facturation Client'); }, [setCurrentPageTitle]);
 
-  const invoices = useMemo(() => {
-    void invoiceRevision;
-    return getAll('invoices') as Invoice[];
-  }, [invoiceRevision]);
-  const reminders = getAll('invoiceReminders') as InvoiceReminder[] || [];
+  const invoices = useMemo(() => (invoiceQuery.data ?? []).filter((document) => document.kind === 'invoice').map((document) => ({
+    id: document.id, number: document.number, clientId: document.clientId, clientName: document.clientName, clientEmail: document.clientEmail ?? '',
+    clientNiu: document.clientNiu, clientRccm: document.clientRccm, date: document.date, dueDate: document.dueDate ?? '',
+    amount: document.amount, tax: document.tax, total: document.total, status: document.status as Invoice['status'],
+    companyId: document.companyId, items: document.items, notes: document.notes, createdAt: document.createdAt,
+  })) as Invoice[], [invoiceQuery.data]);
+  const reminders = (reminderQuery.data ?? []) as InvoiceReminder[];
 
   const filtered = useMemo(() => {
     return invoices.filter(inv => {
@@ -79,19 +130,22 @@ export function InvoicesPage() {
   const overdueInvoices = invoices.filter(i => i.status === 'overdue');
 
   const formatXAF = (amount: number) => formatPlatformCurrency(amount, currency);
+  const formatDate = (value: string) => value ? new Intl.DateTimeFormat(companyJurisdiction?.locale ?? 'fr-FR').format(new Date(`${value}T00:00:00`)) : '—';
 
-  const invoiceSubtotal = invoiceLines.reduce((sum, line) => sum + Math.max(0, line.quantity) * Math.max(0, line.unitPrice), 0);
+  const invoiceSubtotal = invoiceLines.reduce((sum, line) => sum + Math.round(Math.max(0, line.quantity) * Math.max(0, line.unitPrice)), 0);
   const invoiceTaxTotal = invoiceTaxEnabled
-    ? invoiceLines.reduce((sum, line) => sum + Math.round(Math.max(0, line.quantity) * Math.max(0, line.unitPrice) * taxRate / 100), 0)
+    ? invoiceLines.reduce((sum, line) => sum + Math.round(Math.round(Math.max(0, line.quantity) * Math.max(0, line.unitPrice)) * taxRate / 100), 0)
     : 0;
   const invoiceGrandTotal = invoiceSubtotal + invoiceTaxTotal;
 
   const openNewInvoice = () => {
+    setInvoiceClientId('');
     setInvoiceClientName('');
+    setInvoiceClientEmail(''); setInvoiceClientNiu(''); setInvoiceClientRccm('');
     setInvoiceDate(new Date().toISOString().slice(0, 10));
     setInvoiceDueDate('');
     setInvoiceNotes('');
-    setInvoiceTaxEnabled(true);
+    setInvoiceTaxEnabled(taxConfigured);
     setInvoiceLines([createInvoiceLine()]);
     setShowDrawer(true);
   };
@@ -100,50 +154,23 @@ export function InvoicesPage() {
     setInvoiceLines((current) => current.map((line) => line.id === id ? { ...line, ...patch } : line));
   };
 
-  const handleCreateInvoice = (status: Invoice['status']) => {
+  const handleCreateInvoice = (status: Extract<Invoice['status'], 'draft' | 'pending'>) => {
     const validLines = invoiceLines.filter((line) => line.description.trim() && line.quantity > 0 && line.unitPrice > 0);
-    if (!invoiceClientName.trim() || validLines.length === 0) {
+    if (!companyId || !invoiceClientName.trim() || validLines.length === 0) {
       showToast('Sélectionnez un client et renseignez au moins une ligne de facture.', 'warning');
       return;
     }
 
-    const now = new Date().toISOString();
-    const year = new Date(`${invoiceDate}T00:00:00`).getFullYear();
-    let sequence = invoices.length + 1;
-    let number = `FAC-${year}-${String(sequence).padStart(4, '0')}`;
-    while (invoices.some((invoice) => invoice.number === number)) {
-      sequence += 1;
-      number = `FAC-${year}-${String(sequence).padStart(4, '0')}`;
-    }
-    const items = validLines.map((line) => {
-      const amount = line.quantity * line.unitPrice;
-      const tax = invoiceTaxEnabled ? Math.round(amount * taxRate / 100) : 0;
-      return { description: line.description.trim(), quantity: line.quantity, unitPrice: line.unitPrice, tax, total: amount + tax };
-    });
-    const amount = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-    const tax = items.reduce((sum, item) => sum + item.tax, 0);
-
-    const invoice: Invoice = {
-      id: `inv-${Date.now()}`,
-      number,
-      clientName: invoiceClientName.trim(),
-      clientEmail: '',
-      date: invoiceDate,
-      dueDate: invoiceDueDate,
-      amount,
-      tax,
-      total: amount + tax,
-      status,
-      companyId: 'comp-1',
-      items,
+    const due = new Date(`${invoiceDate}T00:00:00.000Z`);
+    due.setUTCDate(due.getUTCDate() + 30);
+    invoiceMutation.mutate({
+      companyId, kind: 'invoice', clientId: invoiceClientId || undefined,
+      clientName: invoiceClientName.trim(), clientEmail: invoiceClientEmail.trim(),
+      clientNiu: invoiceClientNiu.trim() || undefined, clientRccm: invoiceClientRccm.trim() || undefined,
+      date: invoiceDate, dueDate: invoiceDueDate || due.toISOString().slice(0, 10), taxable: invoiceTaxEnabled,
+      initialStatus: status, items: validLines.map((line) => ({ description: line.description.trim(), quantity: line.quantity, unitPrice: line.unitPrice })),
       notes: invoiceNotes.trim() || undefined,
-      createdAt: now,
-    };
-
-    addAndNotify('invoices', invoice);
-    setInvoiceRevision((revision) => revision + 1);
-    setShowDrawer(false);
-    showToast(status === 'draft' ? 'Brouillon de facture enregistré.' : 'Facture émise avec succès.', 'success');
+    });
   };
 
   const statusCounts = {
@@ -154,54 +181,50 @@ export function InvoicesPage() {
     draft: invoices.filter(i => i.status === 'draft').length,
   };
 
-  const handleScheduleReminder = () => {
-    if (!reminderInvoice || !reminderDate) return;
-    const template = REMINDER_TEMPLATES.find(t => t.key === selectedTemplate);
-    const reminder: InvoiceReminder = {
-      id: `rem-${Date.now()}`,
-      invoiceId: reminderInvoice.id,
-      invoiceNumber: reminderInvoice.number,
-      clientName: reminderInvoice.clientName,
-      reminderType: selectedTemplate as InvoiceReminder['reminderType'],
-      reminderDate,
-      status: 'scheduled',
-      templateUsed: template?.label || '',
-      notes: '',
-      createdAt: new Date().toISOString(),
+  const exportInvoices = () => {
+    const csvCell = (value: string | number) => {
+      const text = String(value);
+      const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+      return `"${safe.replaceAll('"', '""')}"`;
     };
-    addAndNotify('invoiceReminders', reminder);
-    setShowReminderModal(false);
-    setReminderInvoice(null);
-    showToast('Relance programmée', 'success');
+    const rows = [
+      ['Numéro', 'Client', 'E-mail', 'Date', 'Échéance', 'Montant HT', 'TVA', 'Total TTC', 'Devise', 'Statut'],
+      ...filtered.map((invoice) => [invoice.number, invoice.clientName, invoice.clientEmail, invoice.date, invoice.dueDate, invoice.amount, invoice.tax, invoice.total, currency, invoice.status]),
+    ];
+    const blob = new Blob([`\uFEFF${rows.map((row) => row.map(csvCell).join(';')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = `factures-${new Date().toISOString().slice(0, 10)}.csv`; link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const openInvoiceEmail = (invoice: Invoice) => {
+    if (!invoice.clientEmail) { showToast('Ajoutez une adresse e-mail au client pour préparer l’envoi.', 'warning'); return; }
+    const subject = encodeURIComponent(`Facture ${invoice.number}`);
+    const body = encodeURIComponent(`Bonjour ${invoice.clientName},\n\nVeuillez trouver les informations relatives à la facture ${invoice.number}, d’un montant de ${formatXAF(invoice.total)}. Échéance : ${formatDate(invoice.dueDate)}.\n\nCordialement,\n${company?.name || ''}`);
+    window.location.href = `mailto:${invoice.clientEmail}?subject=${subject}&body=${body}`;
+  };
+
+  const handleScheduleReminder = () => {
+    if (!companyId || !reminderInvoice || !reminderDate) return;
+    const template = REMINDER_TEMPLATES.find(t => t.key === selectedTemplate);
+    scheduleReminderMutation.mutate({
+      companyId, invoiceId: reminderInvoice.id, reminderType: selectedTemplate as InvoiceReminder['reminderType'],
+      reminderDate, templateUsed: template?.label || selectedTemplate,
+    });
   };
 
   const handleSendReminder = (reminder: InvoiceReminder) => {
-    updateAndNotify('invoiceReminders', reminder.id, { status: 'sent', sentDate: new Date().toISOString() });
-    showToast('Relance envoyée par email', 'success');
+    const invoice = invoices.find((item) => item.id === reminder.invoiceId);
+    if (!invoice?.clientEmail) { showToast('Ajoutez une adresse e-mail au client pour préparer la relance.', 'warning'); return; }
+    const subject = encodeURIComponent(`Relance · facture ${invoice.number}`);
+    const body = encodeURIComponent(`Bonjour ${invoice.clientName},\n\nNous vous rappelons que la facture ${invoice.number} d’un montant de ${formatXAF(invoice.total)} reste à régler. Échéance : ${formatDate(invoice.dueDate)}.\n\nCordialement,\n${company?.name || ''}`);
+    window.location.href = `mailto:${invoice.clientEmail}?subject=${subject}&body=${body}`;
+    showToast('Brouillon ouvert dans votre messagerie. Marquez la relance comme envoyée après son envoi.', 'info');
   };
 
   const generateAutoReminders = () => {
-    let count = 0;
-    overdueInvoices.forEach(inv => {
-      const existing = reminders.filter(r => r.invoiceId === inv.id && r.status === 'scheduled');
-      if (existing.length === 0) {
-        const reminder: InvoiceReminder = {
-          id: `rem-auto-${Date.now()}-${count}`,
-          invoiceId: inv.id,
-          invoiceNumber: inv.number,
-          clientName: inv.clientName,
-          reminderType: 'after_due_7',
-          reminderDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          status: 'scheduled',
-          templateUsed: '7 jours après',
-          notes: 'Générée automatiquement',
-          createdAt: new Date().toISOString(),
-        };
-        addAndNotify('invoiceReminders', reminder);
-        count++;
-      }
-    });
-    showToast(`${count} relances auto générées`, 'success');
+    if (companyId) generateRemindersMutation.mutate({ companyId });
   };
 
   return (
@@ -225,6 +248,8 @@ export function InvoicesPage() {
           </button>
         </div>
       </div>
+
+      {invoiceQuery.isError && <div role="alert" className="flex items-center justify-between gap-3 rounded border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600"><span>Impossible de charger les factures.</span><button type="button" onClick={() => invoiceQuery.refetch()} className="underline">Réessayer</button></div>}
 
       {/* Tabs */}
       <div className="flex gap-1 bg-[var(--bg-elevated)] rounded-lg p-0.5 w-fit">
@@ -273,7 +298,7 @@ export function InvoicesPage() {
               <option value="overdue">En retard ({statusCounts.overdue})</option>
               <option value="draft">Brouillons ({statusCounts.draft})</option>
             </select>
-            <button className="btn-secondary h-9">
+            <button onClick={exportInvoices} className="btn-secondary h-9">
               <Download size={14} /> Export
             </button>
           </div>
@@ -294,6 +319,7 @@ export function InvoicesPage() {
               </div>
               <button
                 onClick={generateAutoReminders}
+                disabled={generateRemindersMutation.isPending}
                 className="btn-primary h-8 text-xs"
               >
                 <Bell size={12} /> Générer relances auto
@@ -336,16 +362,18 @@ export function InvoicesPage() {
                         <p className="text-[11px] text-[var(--text-muted)]">{inv.clientEmail}</p>
                       </td>
                       <td className="px-4 py-3 text-xs text-[var(--text-secondary)]">
-                        {new Date(inv.date).toLocaleDateString('fr-FR')}
+                        {formatDate(inv.date)}
                       </td>
                       <td className="px-4 py-3 text-xs text-[var(--text-secondary)]">
-                        {new Date(inv.dueDate).toLocaleDateString('fr-FR')}
+                        {formatDate(inv.dueDate)}
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-[var(--text-primary)] text-right">
                         {formatXAF(inv.total)}
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={inv.status} />
+                        <select value={inv.status} disabled={invoiceStatusMutation.isPending} onChange={(event) => companyId && invoiceStatusMutation.mutate({ companyId, id: inv.id, kind: 'invoice', status: event.target.value })} className="rounded border border-[var(--divider)] bg-[var(--bg-elevated)] px-2 py-1 text-xs text-[var(--text-primary)]">
+                          {[inv.status, ...(inv.status === 'draft' ? ['pending', 'cancelled'] : inv.status === 'pending' ? ['paid', 'overdue', 'cancelled'] : inv.status === 'overdue' ? ['paid', 'cancelled'] : [])].map((status) => <option key={status} value={status}>{status === 'pending' ? 'En attente' : status === 'paid' ? 'Payée' : status === 'overdue' ? 'En retard' : status === 'cancelled' ? 'Annulée' : 'Brouillon'}</option>)}
+                        </select>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
@@ -357,7 +385,7 @@ export function InvoicesPage() {
                             <Eye size={14} />
                           </button>
                           <button
-                            onClick={() => showToast('Facture envoyée par email', 'success')}
+                            onClick={() => openInvoiceEmail(inv)}
                             className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
                             title="Envoyer"
                           >
@@ -365,7 +393,11 @@ export function InvoicesPage() {
                           </button>
                           {inv.status === 'overdue' && (
                             <button
-                              onClick={() => { setReminderInvoice(inv); setShowReminderModal(true); }}
+                              onClick={() => {
+                                setReminderInvoice(inv); setSelectedTemplate('after_due_7');
+                                const date = new Date(`${inv.dueDate}T00:00:00.000Z`); date.setUTCDate(date.getUTCDate() + 7);
+                                setReminderDate(date.toISOString().slice(0, 10)); setShowReminderModal(true);
+                              }}
                               className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-danger)] transition-colors"
                               title="Programmer relance"
                             >
@@ -373,7 +405,7 @@ export function InvoicesPage() {
                             </button>
                           )}
                           <button
-                            onClick={() => showToast('Téléchargement PDF...', 'info')}
+                            onClick={() => setSelectedInvoice(inv)}
                             className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-secondary)] transition-colors"
                             title="PDF"
                           >
@@ -390,24 +422,14 @@ export function InvoicesPage() {
         </>
       )}
 
+      {reminderQuery.isError && <div role="alert" className="flex items-center justify-between gap-3 rounded border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600"><span>Impossible de charger les relances.</span><button type="button" onClick={() => reminderQuery.refetch()} className="underline">Réessayer</button></div>}
+
       {activeTab === 'reminders' && (
         <>
-          {/* Auto-reminder settings */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Settings size={14} className="text-[var(--text-muted)]" />
-                <span className="text-sm text-[var(--text-secondary)]">Relances automatiques</span>
-              </div>
-              <button
-                onClick={() => setAutoReminders(!autoReminders)}
-                className={`relative w-10 h-5 rounded-full transition-colors ${autoReminders ? 'bg-[var(--accent-primary)]' : 'bg-[var(--bg-elevated)]'}`}
-              >
-                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${autoReminders ? 'translate-x-5' : 'translate-x-0.5'}`} />
-              </button>
-            </div>
-            <button onClick={generateAutoReminders} className="btn-primary h-8 text-xs">
-              <Play size={12} /> Générer relances pour factures en retard
+            <p className="text-sm text-[var(--text-secondary)]">Les relances sont enregistrées par entreprise et restent programmées jusqu’à leur envoi confirmé.</p>
+            <button onClick={generateAutoReminders} disabled={generateRemindersMutation.isPending} className="btn-primary h-8 text-xs disabled:opacity-50">
+              <Bell size={12} /> Programmer les relances des retards
             </button>
           </div>
 
@@ -468,13 +490,14 @@ export function InvoicesPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
                           {rem.status === 'scheduled' && (
-                            <button
-                              onClick={() => handleSendReminder(rem)}
-                              className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
-                              title="Envoyer maintenant"
-                            >
-                              <Send size={14} />
-                            </button>
+                            <>
+                              <button type="button" onClick={() => handleSendReminder(rem)} className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors" title="Préparer l’e-mail de relance">
+                                <Send size={14} />
+                              </button>
+                              <button type="button" disabled={reminderStatusMutation.isPending || !companyId} onClick={() => companyId && reminderStatusMutation.mutate({ companyId, id: rem.id, status: 'sent' })} className="p-1.5 rounded-lg hover:bg-white/5 text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors disabled:opacity-40" title="Confirmer l’envoi de la relance">
+                                <CheckCircle size={14} />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -507,13 +530,24 @@ export function InvoicesPage() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm text-[var(--text-secondary)] mb-1.5">Client</label>
-                    <select value={invoiceClientName} onChange={(event) => setInvoiceClientName(event.target.value)} className="w-full h-10 px-3 glass-input text-sm">
-                      <option value="">Sélectionner un client</option>
-                      <option>Société Générale Cameroun</option>
-                      <option>MTN Cameroun</option>
-                      <option>Ecobank Cameroun</option>
-                      <option>Orange Cameroun</option>
+                    <select value={invoiceClientId} onChange={(event) => {
+                      const id = event.target.value;
+                      const client = registeredClients.find((item) => String(item.id) === id);
+                      setInvoiceClientId(id);
+                      if (client) {
+                        setInvoiceClientName(client.name); setInvoiceClientEmail(client.email ?? '');
+                        setInvoiceClientNiu(client.niu ?? ''); setInvoiceClientRccm(client.rccm ?? '');
+                      }
+                    }} className="w-full h-10 px-3 glass-input text-sm">
+                      <option value="">Sélectionner un client enregistré</option>
+                      {registeredClients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
                     </select>
+                    <input value={invoiceClientName} onChange={(event) => { setInvoiceClientId(''); setInvoiceClientName(event.target.value); }} className="mt-2 w-full h-10 px-3 glass-input text-sm" placeholder="Nom du client" />
+                    <input type="email" value={invoiceClientEmail} onChange={(event) => setInvoiceClientEmail(event.target.value)} className="mt-2 w-full h-10 px-3 glass-input text-sm" placeholder="E-mail du client" />
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <input value={invoiceClientNiu} onChange={(event) => setInvoiceClientNiu(event.target.value)} className="h-10 px-3 glass-input text-sm" placeholder={companyJurisdiction?.taxIdLabel ?? 'Identifiant fiscal'} />
+                      <input value={invoiceClientRccm} onChange={(event) => setInvoiceClientRccm(event.target.value)} className="h-10 px-3 glass-input text-sm" placeholder={companyJurisdiction?.commercialRegisterLabel ?? 'Registre commercial'} />
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className="block text-sm text-[var(--text-secondary)] mb-1.5">Date</label><input type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} className="w-full h-10 px-3 glass-input text-sm" /></div>
@@ -540,10 +574,10 @@ export function InvoicesPage() {
                     </div>
                   </div>
                   <div className="glass-card-compact p-3 space-y-3">
-                    <label className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
+                    {taxConfigured ? <label className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
                       <input type="checkbox" checked={invoiceTaxEnabled} onChange={(event) => setInvoiceTaxEnabled(event.target.checked)} className="mt-0.5 accent-[var(--accent-primary)]" />
-                      <span>Appliquer la TVA ({taxRate} %)<span className="mt-0.5 block text-xs text-[var(--text-muted)]">Décochez cette option si votre entreprise ne collecte pas la TVA.</span></span>
-                    </label>
+                      <span>Appliquer la TVA ({taxRate} %)<span className="mt-0.5 block text-xs text-[var(--text-muted)]">Décochez cette option si cette facture est exonérée ou non assujettie.</span></span>
+                    </label> : <p className="text-xs leading-5 text-amber-800">Aucun taux de TVA actif n’est défini pour le pays de cette entreprise. Configurez une règle validée dans <a href="/settings" className="font-semibold underline">Paramètres de l’entreprise</a> avant d’émettre une facture taxable.</p>}
                     <div className="h-px bg-[var(--divider)]" />
                     <div className="flex justify-between text-sm"><span className="text-[var(--text-secondary)]">Sous-total HT</span><span className="text-[var(--text-primary)]">{formatXAF(invoiceSubtotal)}</span></div>
                     <div className="flex justify-between text-sm"><span className="text-[var(--text-secondary)]">{invoiceTaxEnabled ? `TVA (${taxRate} %)` : 'TVA non applicable'}</span><span className="text-[var(--text-primary)]">{formatXAF(invoiceTaxTotal)}</span></div>
@@ -556,8 +590,8 @@ export function InvoicesPage() {
                   </div>
                   <div className="flex gap-3 pt-2">
                     <button onClick={() => setShowDrawer(false)} className="flex-1 btn-ghost h-10 justify-center">Annuler</button>
-                    <button onClick={() => handleCreateInvoice('draft')} className="flex-1 btn-secondary h-10 justify-center">Enregistrer</button>
-                    <button onClick={() => handleCreateInvoice('pending')} className="flex-1 btn-primary h-10 justify-center">Émettre</button>
+                    <button disabled={invoiceMutation.isPending} onClick={() => handleCreateInvoice('draft')} className="flex-1 btn-secondary h-10 justify-center disabled:opacity-50">Enregistrer</button>
+                    <button disabled={invoiceMutation.isPending} onClick={() => handleCreateInvoice('pending')} className="flex-1 btn-primary h-10 justify-center disabled:opacity-50">Émettre</button>
                   </div>
                 </div>
               </div>
@@ -590,10 +624,9 @@ export function InvoicesPage() {
                   {selectedInvoice.status === 'draft' && (
                     <button
                       onClick={() => {
-                        updateAndNotify('invoices', selectedInvoice.id, { status: 'pending' });
-                        setSelectedInvoice({ ...selectedInvoice, status: 'pending' });
-                        showToast('Facture brouillon validée et publiée !', 'success');
+                        if (companyId) invoiceStatusMutation.mutate({ companyId, id: selectedInvoice.id, kind: 'invoice', status: 'pending' });
                       }}
+                      disabled={invoiceStatusMutation.isPending}
                       className="btn-primary h-8 px-3 text-xs gap-1 font-bold bg-amber-500 text-black hover:bg-amber-400"
                     >
                       Valider & Émettre
@@ -614,21 +647,18 @@ export function InvoicesPage() {
                   {/* Header */}
                   <div className="flex justify-between items-start border-b border-gray-300 pb-5">
                     <div>
-                      <h2 className="text-xl font-bold text-blue-900 tracking-tight">IDIBA GROUP SARL</h2>
-                      <p className="text-xs text-gray-600 font-medium mt-0.5">Services Technologiques & Conseils aux Entreprises</p>
-                      <p className="text-xs text-gray-600">Douala & Yaoundé, Cameroun • Tél: +237 690 00 00 00</p>
+                      <h2 className="text-xl font-bold text-blue-900 tracking-tight">{company?.name || 'Entreprise'}</h2>
+                      <p className="text-xs text-gray-600 font-medium mt-0.5">{company?.address || ''}</p>
+                      <p className="text-xs text-gray-600">{[company?.city, company?.country, company?.phone, company?.email].filter(Boolean).join(' · ')}</p>
                       <p className="text-[11px] text-gray-700 font-mono mt-1">
-                        <strong>RCCM:</strong> RC/DLA/2019/M/0847 • <strong>NIU:</strong> M0123456789C
-                      </p>
-                      <p className="text-[11px] text-gray-700 font-mono">
-                        <strong>Compte bancaire:</strong> UBA Cameroun • <strong>N° RIB:</strong> 10033 00001 12345678901 45
+                        <strong>{companyJurisdiction?.commercialRegisterLabel ?? 'Registre commercial'}:</strong> {company?.rccm || '—'} • <strong>{companyJurisdiction?.taxIdLabel ?? 'Identifiant fiscal'}:</strong> {company?.niu || company?.taxId || '—'}
                       </p>
                     </div>
                     <div className="text-right">
                       <span className="bg-green-700 text-white font-bold text-xs px-3 py-1 rounded inline-block tracking-wider uppercase">FACTURE OFFICIELLE</span>
                       <p className="text-xs text-gray-800 font-mono font-bold mt-2">N° {selectedInvoice.number}</p>
-                      <p className="text-xs text-gray-600">Date d'émission: {new Date(selectedInvoice.date).toLocaleDateString('fr-FR')}</p>
-                      <p className="text-xs text-gray-600">Date d'échéance: {new Date(selectedInvoice.dueDate).toLocaleDateString('fr-FR')}</p>
+                      <p className="text-xs text-gray-600">Date d'émission: {formatDate(selectedInvoice.date)}</p>
+                      <p className="text-xs text-gray-600">Date d'échéance: {formatDate(selectedInvoice.dueDate)}</p>
                     </div>
                   </div>
 
@@ -636,16 +666,16 @@ export function InvoicesPage() {
                   <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
                     <div>
                       <span className="text-[10px] uppercase font-bold text-gray-500 block mb-1">Prestataire / Émetteur</span>
-                      <p className="text-xs font-bold text-gray-900">IDIBA GROUP SARL</p>
-                      <p className="text-xs text-gray-600">Direction Financière & Comptable</p>
+                      <p className="text-xs font-bold text-gray-900">{company?.name || 'Entreprise'}</p>
+                      <p className="text-xs text-gray-600">{[company?.address, company?.city, company?.country].filter(Boolean).join(' · ')}</p>
                     </div>
                     <div>
                       <span className="text-[10px] uppercase font-bold text-blue-900 block mb-1">Facturé à (Client)</span>
                       <p className="text-sm font-bold text-gray-900">{selectedInvoice.clientName}</p>
                       <p className="text-xs text-gray-600">{selectedInvoice.clientEmail}</p>
                       <div className="mt-1 pt-1 border-t border-gray-200 text-xs font-mono text-gray-700">
-                        <p><strong>NIU Client:</strong> {selectedInvoice.clientNiu || 'M08191244901A'}</p>
-                        <p><strong>RCCM Client:</strong> {selectedInvoice.clientRccm || 'RC/DLA/2019/B/1420'}</p>
+                        <p><strong>{companyJurisdiction?.taxIdLabel ?? 'Identifiant fiscal'} client:</strong> {selectedInvoice.clientNiu || '—'}</p>
+                        <p><strong>{companyJurisdiction?.commercialRegisterLabel ?? 'Registre commercial'} client:</strong> {selectedInvoice.clientRccm || '—'}</p>
                       </div>
                     </div>
                   </div>
@@ -656,7 +686,7 @@ export function InvoicesPage() {
                       <tr className="bg-gray-800 text-white text-[11px] uppercase tracking-wider">
                         <th className="text-left p-3 rounded-tl">Désignation des Prestations / Articles</th>
                         <th className="text-center p-3">Quantité</th>
-                        <th className="text-right p-3">P.U. HT (FCFA)</th>
+                        <th className="text-right p-3">P.U. HT ({currency})</th>
                         <th className="text-right p-3 rounded-tr">Montant Total HT</th>
                       </tr>
                     </thead>
@@ -665,8 +695,8 @@ export function InvoicesPage() {
                         <tr key={i} className={i % 2 === 0 ? 'bg-white border-b border-gray-100' : 'bg-gray-50/50 border-b border-gray-100'}>
                           <td className="p-3 font-medium text-gray-800">{item.description}</td>
                           <td className="text-center p-3 font-mono">{item.quantity || 1}</td>
-                          <td className="text-right p-3 font-mono">{formatXAF(item.unitPrice || item.total)}</td>
-                          <td className="text-right p-3 font-mono font-bold text-gray-900">{formatXAF(item.total)}</td>
+                          <td className="text-right p-3 font-mono">{formatXAF(item.unitPrice)}</td>
+                          <td className="text-right p-3 font-mono font-bold text-gray-900">{formatXAF(Math.round(item.quantity * item.unitPrice))}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -706,19 +736,19 @@ export function InvoicesPage() {
                         <div className="absolute right-1.5 top-1.5 text-[8px] bg-emerald-700 text-white font-mono px-1 rounded font-bold">QUALIFIÉ</div>
                         <p className="text-[9px] uppercase font-bold text-emerald-900">Cachet & Signature Électronique</p>
                         <div className="w-14 h-14 rounded-full border-2 border-dashed border-emerald-700 flex flex-col items-center justify-center my-0.5 bg-white text-[7px] font-bold text-emerald-800 shadow-sm leading-tight">
-                          <span>IDIBA GROUP</span>
+                          <span>{company?.name || 'Entreprise'}</span>
                           <span className="text-[5px] text-emerald-600">DOUALA-CM</span>
                           <span className="text-[6px] text-emerald-700 font-mono">VALIDÉ</span>
                         </div>
-                        <p className="text-[8px] text-emerald-800 font-bold font-mono">Signé électroniquement le {new Date(selectedInvoice.date).toLocaleDateString('fr-FR')}</p>
+                        <p className="text-[8px] text-emerald-800 font-bold font-mono">Validation interne le {formatDate(selectedInvoice.date)}</p>
                       </div>
                     </div>
                   )}
 
                   {/* Footer Legal Notice */}
                   <div className="pt-8 border-t border-gray-300 text-center text-[10px] text-gray-500 space-y-1">
-                    <p className="font-semibold text-gray-700">IDIBA GROUP SARL — S.A.R.L au capital de 10 000 000 FCFA</p>
-                    <p>Mentions Légales: NIU M0123456789C • RCCM RC/DLA/2019/M/0847 • Régime Fiscal: Réel</p>
+                    <p className="font-semibold text-gray-700">{company?.name || 'Entreprise'} · {company?.country || companyJurisdiction?.name || ''}</p>
+                    <p>{companyJurisdiction?.taxIdLabel ?? 'Identifiant fiscal'}: {company?.niu || company?.taxId || '—'} · {companyJurisdiction?.commercialRegisterLabel ?? 'Registre commercial'}: {company?.rccm || '—'} · Monnaie: {currency}</p>
                     <p className="italic">Facture générée automatiquement par IDIBAGES ERP - Format A4 Conforme DGI/SYSCOHADA</p>
                   </div>
                 </div>
@@ -752,7 +782,15 @@ export function InvoicesPage() {
                     <label className="block text-sm text-[var(--text-secondary)] mb-1.5">Type de relance</label>
                     <select
                       value={selectedTemplate}
-                      onChange={(e) => setSelectedTemplate(e.target.value)}
+                      onChange={(e) => {
+                        setSelectedTemplate(e.target.value);
+                        if (reminderInvoice) {
+                          const template = REMINDER_TEMPLATES.find((item) => item.key === e.target.value);
+                          const date = new Date(`${reminderInvoice.dueDate}T00:00:00.000Z`);
+                          date.setUTCDate(date.getUTCDate() + (template?.days ?? 0));
+                          setReminderDate(date.toISOString().slice(0, 10));
+                        }
+                      }}
                       className="w-full h-10 px-3 glass-input text-sm"
                     >
                       {REMINDER_TEMPLATES.map(t => (

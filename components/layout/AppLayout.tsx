@@ -9,13 +9,24 @@ import { useBrandingStore } from '@/stores/brandingStore';
 import { useAuth } from '@/hooks/useAuth';
 import { useUIStore as useUIActions } from '@/stores/uiStore';
 import { useEffect } from 'react';
-import { MobileBottomNav } from './MobileBottomNav';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useActiveCompany } from '@/hooks/useActiveCompany';
+import { trpc } from '@/providers/trpc';
+import { parseSubscriptionFeatureKeys, subscriptionFeatureForRoute } from '@/lib/subscription-features';
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { sidebarOpen } = useUIStore();
   const { primaryColor } = useBrandingStore();
   const { user, logout } = useAuth();
   const showToast = useUIActions((state) => state.showToast);
+  const pathname = usePathname();
+  const { companyId } = useActiveCompany();
+  const subscriptionAccess = trpc.subscription.getUsage.useQuery({ companyId: companyId ?? 0 }, { enabled: Boolean(companyId), staleTime: 30_000 });
+  const requiredFeature = subscriptionFeatureForRoute(pathname);
+  const allowedFeatures = parseSubscriptionFeatureKeys(subscriptionAccess.data?.plan?.moduleAccess);
+  const subscriptionCheckResolved = subscriptionAccess.isSuccess || subscriptionAccess.isError || !companyId;
+  const lockedByPlan = Boolean(requiredFeature && subscriptionCheckResolved && (!subscriptionAccess.isSuccess || !allowedFeatures.includes(requiredFeature)));
 
   useEffect(() => {
     document.documentElement.style.setProperty('--accent-primary', primaryColor);
@@ -75,21 +86,28 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }, [user, logout, showToast]);
 
   return (
-    <div className="h-[100dvh] min-w-0 overflow-hidden bg-[var(--bg-primary)]">
+    <div className="h-screen overflow-hidden bg-[var(--bg-primary)]">
       <Sidebar />
       <ToastProvider />
       <SearchModal />
       <ChatBubbles />
-      <MobileBottomNav />
 
       <div
-        className={`ml-0 flex h-full min-w-0 flex-col transition-[margin] duration-300 md:ml-16 ${
-          sidebarOpen ? 'lg:ml-[320px]' : ''
+        className={`flex h-screen flex-col ml-16 transition-[margin] duration-300 ${
+          sidebarOpen ? 'md:ml-[320px]' : ''
         }`}
       >
         <Header />
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="min-w-0 p-3 pb-[calc(5rem+env(safe-area-inset-bottom))] sm:p-5 sm:pb-24 md:p-6 md:pb-6">{children}</div>
+          {lockedByPlan ? (
+            <div className="mx-auto flex min-h-full max-w-2xl items-center justify-center p-6">
+              <section className="w-full rounded-xl border border-[var(--divider)] bg-[var(--bg-card)] p-8 text-center">
+                <h1 className="text-lg font-semibold text-[var(--text-primary)]">{subscriptionAccess.isError || !companyId ? 'Impossible de vérifier l’accès à ce module' : 'Cette fonctionnalité n’est pas incluse dans votre forfait'}</h1>
+                <p className="mt-2 text-sm text-[var(--text-secondary)]">{subscriptionAccess.isError || !companyId ? 'Vérifiez la connexion à votre espace entreprise et actualisez la page.' : 'Consultez les offres disponibles pour activer ce module. Vos données restent conservées si vous changez de forfait.'}</p>
+                <Link href="/subscription" className="btn-primary mt-5 inline-flex h-10 items-center px-4 text-sm">Voir les offres</Link>
+              </section>
+            </div>
+          ) : <div className="p-6">{children}</div>}
         </main>
       </div>
     </div>

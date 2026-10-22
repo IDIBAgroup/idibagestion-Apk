@@ -117,7 +117,7 @@ export interface InvoiceItem {
   total: number;
 }
 
-export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'converted';
+export type QuoteStatus = 'draft' | 'sent' | 'counter_proposal' | 'accepted' | 'rejected' | 'expired' | 'converted';
 
 export interface Quote {
   id: string;
@@ -201,6 +201,35 @@ export interface AccountingEntry {
   debit: number;
   credit: number;
   companyId: string;
+  analyticCode?: string;
+  transactionAmount?: number;
+  transactionCurrency?: string;
+  exchangeRate?: number;
+  baseCurrency?: string;
+}
+
+export type BankTransactionStatus = 'unmatched' | 'matched' | 'ignored';
+
+export interface BankTransaction {
+  id: string;
+  accountName: string;
+  bookingDate: string;
+  label: string;
+  reference?: string;
+  amount: number;
+  direction: 'credit' | 'debit';
+  status: BankTransactionStatus;
+  accountingEntryId?: string;
+  companyId: string;
+}
+
+export interface FinanceBudget {
+  id: string;
+  name: string;
+  analyticCode: string;
+  period: string;
+  amount: number;
+  companyId: string;
 }
 
 export interface ChartAccount {
@@ -227,6 +256,11 @@ export interface Asset {
   location: string;
   status: AssetStatus;
   companyId: string;
+  currencyCode?: string;
+  usefulLifeYears?: number;
+  depreciationMethod?: 'linear' | 'degressive';
+  depreciationStartDate?: string;
+  depreciationPostedYears?: number[];
   image?: string;
   qrCode?: string;
 }
@@ -348,6 +382,7 @@ export interface Expense {
   employeeName: string;
   status: 'pending' | 'approved' | 'rejected';
   companyId: string;
+  currencyCode?: string;
   receipt?: string;
 }
 
@@ -581,7 +616,9 @@ export type OhadaCountry =
   | 'GN' // Guinee
   | 'CG' // Congo
   | 'CF' // RCA
-  | 'KM'; // Comores
+  | 'KM' // Comores
+  | 'GW' // Guinée-Bissau
+  | 'GQ'; // Guinée équatoriale
 
 export interface CountryTaxConfig {
   code: OhadaCountry;
@@ -604,6 +641,7 @@ export interface CountryTaxConfig {
   fiscalYearEnd: string; // MM-DD
   dsfDeadlineDays: number; // jours apres fin d'exercice
   dsfFormCode: string; // Code formulaire DSF local
+  configurationStatus?: 'needs_setup' | 'needs_validation' | 'validated';
 }
 
 export interface DSFForm {
